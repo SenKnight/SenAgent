@@ -55,6 +55,14 @@ default_provider = "deepseek"
 context_window = 128000     # 上下文 token 近似预算（用于历史截断）
 max_tool_rounds = 25        # 单轮用户输入的最大工具调用轮数
 
+
+[[providers]]
+name = "qoder"
+base_url = "sungrow-of-enterprise.vpc.qoder.com.cn/v1"
+api_key = "env:QODER_API_KEY"   # 支持 env:VAR 引用环境变量，也可直接填 "sk-..."
+model = "deepseek-flash"
+wire_api = "chat"                  # chat（/v1/chat/completions）或 responses（/v1/responses）
+
 [[providers]]
 name = "deepseek"
 base_url = "https://api.deepseek.com/v1"
@@ -193,17 +201,28 @@ REST：`GET/POST /api/sessions`、`GET/PATCH/DELETE /api/sessions/{id}`、`GET /
 
 ## 桌面端（Tauri 2）
 
-桌面端为独立 workspace（避免 WebKitGTK 系统依赖影响日常开发构建）：
+桌面端为独立 workspace（避免 WebKitGTK 系统依赖影响日常开发构建）。首次构建需先装 Tauri CLI 与系统依赖：
 
 ```bash
+# 1. Tauri CLI（一次性安装，提供 cargo tauri 子命令）
+cargo install tauri-cli --version "^2" --locked
+
+# 2. Linux 系统依赖（macOS / Windows 无需此步）
+sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+  build-essential pkg-config curl wget file libxdo-dev libssl-dev
+
+# 3. 构建（自动先构建前端，再编译并打包）
 cd crates/sen-desktop
-cargo tauri dev          # 开发（需先 npm run build 前端，或使用 devUrl）
+cargo tauri dev          # 开发模式：窗口指向进程内本地服务
 cargo tauri build        # 打包 dmg / msi / AppImage+deb
 ```
 
+打包产物位于 `crates/sen-desktop/target/release/bundle/`（Linux 为 `deb/` 与 `appimage/`）。
+
+> 注：AppImage 打包需从 GitHub releases 下载打包工具（AppRun / linuxdeploy），国内网络可能超时；遇到时可直接用 deb，或挂代理后执行 `cargo tauri build --bundles appimage` 补打（工具会缓存到 `~/.cache/tauri/`，也可手动将 `AppRun-x86_64` 与 `linuxdeploy-07333c6-x86_64.AppImage` 放入该目录离线打包）。
+
 - 启动时进程内绑定 `127.0.0.1:0`（随机端口）并启动 axum，窗口指向本地服务；
-- 前端资源优先使用打包资源（`frontend-dist`），开发时回退 `frontend/dist`；
-- Linux 构建需系统依赖：`libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential`。
+- 前端资源优先使用打包资源（`frontend-dist`），开发时回退 `frontend/dist`。
 
 应用图标由源图生成：
 

@@ -2,6 +2,7 @@
 **/target
 node_modules/
 frontend/dist/
+crates/sen-desktop/gen/schemas
 *.log
 .DS_Store
 .tmp/
