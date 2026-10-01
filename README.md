@@ -27,12 +27,18 @@ CLI (clap, Rust)      Web 浏览器            桌面端 (Tauri 2)
 
 ## 快速开始
 
-### 1. 构建 CLI
+### 1. 构建并安装 CLI
 
 ```bash
+# 方式一（推荐）：安装到 ~/.cargo/bin（rustup 默认已加入 PATH，全局可用 sen 命令）
+cargo install --path crates/sen-cli
+
+# 方式二：仅构建，手动把产物放进 PATH
 cargo build --release -p sen-cli
-# 产物：target/release/sen
+cp target/release/sen ~/.local/bin/     # Windows：将 target\release 目录加入 PATH
 ```
+
+注意 `cargo build` 只是产出 `target/release/sen`，**不会注册命令**；不安装时需写完整路径调用（如 `./target/release/sen run "你好"`），或临时 `export PATH="$PWD/target/release:$PATH"`。安装后用 `sen --version` 验证；代码更新后重新执行 `cargo install --path crates/sen-cli` 覆盖即可。
 
 ### 2. 初始化配置
 
@@ -155,9 +161,17 @@ cd frontend
 npm install
 npm run build            # 产物 frontend/dist
 
-cd ..
-sen serve                # 访问 http://127.0.0.1:8642
+cd ..                    # 回到项目根（sen serve 会自动探测 frontend/dist）
+sen serve                # 浏览器打开 http://127.0.0.1:8642 即完整界面
 ```
+
+构建产物**不需要单独部署**：`sen serve` 会以同源方式同时提供页面与 API（页面与 WebSocket 都走 `:8642`）。在任意目录运行 `sen` 时，用 `--static-dir` 指定产物位置：
+
+```bash
+sen serve --static-dir /path/to/SenAgent/frontend/dist
+```
+
+桌面端无需此步骤：`cargo tauri build` 会把前端产物作为内嵌资源一并打包（见下文）。
 
 开发模式（Vite 热更新 + 代理到后端）：
 

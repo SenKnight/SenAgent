@@ -20,6 +20,8 @@ pub async fn run(
     });
     if let Some(dir) = &static_dir {
         println!("托管前端静态资源: {}", dir.display());
+    } else {
+        println!("提示: 未找到前端产物 frontend/dist（仅提供 API），可在项目根运行或用 --static-dir <路径> 指定");
     }
     let cfg = sen_server::ServerConfig {
         host: host.clone(),
