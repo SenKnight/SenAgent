@@ -1,0 +1,111 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── CLI（sen 二进制）：三平台构建 + 单元测试 ────────────────────────────
+  cli:
+    name: CLI (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: sen-linux-x86_64
+          - os: macos-14
+            artifact: sen-macos-aarch64
+          - os: windows-2022
+            artifact: sen-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 单元测试（sen-core）
+        run: cargo test -p sen-core --verbose
+
+      - name: 构建 CLI（release）
+        run: cargo build --release -p sen-cli
+
+      - name: 打包（unix）
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp target/release/sen dist/
+          cp README.md dist/
+          tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
+
+      - name: 打包（windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/sen.exe dist/
+          Copy-Item README.md dist/
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+          if-no-files-found: ignore
+
+  # ── 桌面端（Tauri 2 单二进制）：dmg / msi / AppImage+deb ───────────────
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+          - os: macos-14
+          - os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/sen-desktop
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux 系统依赖（WebKitGTK 等）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf build-essential
+
+      - name: 构建前端
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: 生成应用图标
+        run: npx --yes @tauri-apps/cli@^2 icon crates/sen-desktop/icons/source.png --output crates/sen-desktop/icons
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/sen-desktop
+          args: --verbose

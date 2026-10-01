@@ -1,0 +1,30 @@
+[package]
+name = "sen-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SenAgent core: agent loop, LLM providers, tools, memory, skills"
+
+[dependencies]
+tokio = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+dirs = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+glob = { workspace = true }
+walkdir = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

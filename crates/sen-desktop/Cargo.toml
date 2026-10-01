@@ -1,0 +1,20 @@
+[package]
+name = "sen-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "SenAgent desktop app: Tauri 2 shell embedding sen-core + sen-server in-process"
+
+# 独立 workspace：Tauri 构建需要系统 WebView 依赖（Linux: webkit2gtk-4.1 等），
+# 不参与根 workspace 的日常构建（根 Cargo.toml 已 exclude）。
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+sen-core = { path = "../sen-core" }
+sen-server = { path = "../sen-server" }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"

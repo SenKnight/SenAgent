@@ -1,0 +1,21 @@
+[package]
+name = "sen-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SenAgent CLI (sen): interactive chat, one-shot run, sessions, skills, serve"
+
+[[bin]]
+name = "sen"
+path = "src/main.rs"
+
+[dependencies]
+sen-core = { workspace = true }
+sen-server = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+rustyline = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

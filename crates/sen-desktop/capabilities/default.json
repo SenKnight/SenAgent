@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "SenAgent 默认能力：窗口由 Rust 侧创建并指向内嵌 axum 服务，前端不直接调用 Tauri API",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

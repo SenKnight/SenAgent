@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sen-core",
+    "crates/sen-server",
+    "crates/sen-cli",
+]
+exclude = ["crates/sen-desktop"]
+# sen-desktop（Tauri 2 壳）是独立 workspace：其构建需要系统 WebView 依赖
+# （Linux: webkit2gtk-4.1 等），不参与日常构建；桌面端命令见 README。
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+sen-core = { path = "crates/sen-core" }
+sen-server = { path = "crates/sen-server" }
+
+# async
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+async-stream = "0.3"
+async-trait = "0.1"
+bytes = "1"
+
+# serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# http client
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "http2", "charset"] }
+
+# cli
+clap = { version = "4", features = ["derive"] }
+rustyline = "14"
+
+# storage / schema / misc
+rusqlite = { version = "0.32", features = ["bundled"] }
+schemars = "0.8"
+thiserror = "2"
+anyhow = "1"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+glob = "0.3"
+walkdir = "2"
+regex = "1"
+
+# server
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
