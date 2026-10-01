@@ -30,8 +30,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: 单元测试（sen-core）
-        run: cargo test -p sen-core --verbose
+      - name: 测试（sen-core + sen-server）
+        run: cargo test --workspace --verbose
 
       - name: 构建 CLI（release）
         run: cargo build --release -p sen-cli

@@ -1,6 +1,12 @@
 /** REST 客户端（dev 走 Vite proxy，生产与后端同源）。 */
 
-import type { RuntimeInfo, Session, StoredMessage } from "./types";
+import type {
+  DraftSettings,
+  EditableSettings,
+  RuntimeInfo,
+  Session,
+  StoredMessage,
+} from "./types";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -45,6 +51,15 @@ export const deleteSession = (id: string) =>
   });
 
 export const getRuntimeInfo = () => req<RuntimeInfo>("/api/config");
+
+export const getSettings = () => req<EditableSettings>("/api/settings");
+
+/** 保存配置并热生效（服务端校验通过后原子替换运行态 Agent）。 */
+export const saveSettings = (settings: DraftSettings) =>
+  req<EditableSettings>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
 
 export function wsUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";

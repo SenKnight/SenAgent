@@ -53,6 +53,47 @@ export interface RuntimeInfo {
   skills: { name: string; description: string; group: string }[];
 }
 
+/** 设置页：可编辑 Provider（env: 引用原样回显；明文密钥不回显，以 api_key_set 标记）。 */
+export interface EditableProvider {
+  name: string;
+  base_url: string;
+  model: string;
+  wire_api: "chat" | "responses";
+  api_key: string | null;
+  api_key_set: boolean;
+  max_tokens: number | null;
+  temperature: number | null;
+}
+
+/** 设置页：完整可编辑配置（GET / PUT /api/settings）。 */
+export interface EditableSettings {
+  config_path: string;
+  default_provider: string;
+  context_window: number;
+  max_tool_rounds: number;
+  system_prompt: string | null;
+  providers: EditableProvider[];
+}
+
+/** 保存请求：api_key 缺省 = 保留原值，空串 = 清除。 */
+export interface DraftProvider {
+  name: string;
+  base_url: string;
+  model: string;
+  wire_api: "chat" | "responses";
+  api_key?: string;
+  max_tokens: number | null;
+  temperature: number | null;
+}
+
+export interface DraftSettings {
+  default_provider: string;
+  context_window: number;
+  max_tool_rounds: number;
+  system_prompt: string | null;
+  providers: DraftProvider[];
+}
+
 /** UI 层的工具调用状态。 */
 export interface UiTool {
   /** 对应 assistant 消息中的 tool_call id（用于与 tool 结果配对） */

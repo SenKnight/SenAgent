@@ -29,20 +29,23 @@ enum ClientMessage {
 }
 
 pub async fn ws_handler(State(st): State<AppState>, ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(move |socket| handle(socket, st.agent.clone()))
+    ws.on_upgrade(move |socket| handle(socket, st))
 }
 
-async fn handle(socket: WebSocket, agent: sen_core::Agent) {
+async fn handle(socket: WebSocket, st: AppState) {
     let (mut sender, mut receiver) = socket.split();
 
     // 首帧：就绪信息（含当前模型）
-    let ready = format!(
-        "{{\"type\":\"ready\",\"model\":{},\"wire_api\":{}}}",
-        json_str(agent.provider().model()),
-        json_str(agent.provider().wire_api())
-    );
-    if sender.send(Message::Text(ready.into())).await.is_err() {
-        return;
+    {
+        let agent = st.agent();
+        let ready = format!(
+            "{{\"type\":\"ready\",\"model\":{},\"wire_api\":{}}}",
+            json_str(agent.provider().model()),
+            json_str(agent.provider().wire_api())
+        );
+        if sender.send(Message::Text(ready.into())).await.is_err() {
+            return;
+        }
     }
 
     while let Some(Ok(msg)) = receiver.next().await {
@@ -77,6 +80,8 @@ async fn handle(socket: WebSocket, agent: sen_core::Agent) {
                 if content.trim().is_empty() {
                     continue;
                 }
+                // 每轮取最新 Agent 快照：页面保存配置后下一轮对话即生效。
+                let agent = st.agent();
                 match agent.store().get_session(&session_id) {
                     Ok(Some(_)) => {}
                     Ok(None) => {

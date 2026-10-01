@@ -97,6 +97,11 @@ impl Agent {
         &self.skills
     }
 
+    /// 当前生效配置（config.toml 加载内容）。
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }

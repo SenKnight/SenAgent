@@ -72,6 +72,8 @@ wire_api = "chat"                  # 本地模型免 API Key
 
 已有配置项均可用环境变量覆盖：`SEN_PROVIDER` / `SEN_BASE_URL` / `SEN_API_KEY` / `SEN_MODEL` / `SEN_WIRE_API`。
 
+也可以完全不动文件：启动 Web / 桌面端后打开右上角**设置**面板，图形化编辑 providers（名称 / Base URL / 模型 / wire_api 协议 / API Key）、默认 provider、上下文窗口、工具轮数上限与追加系统提示词，点「保存并生效」立即热更新（下一条消息即使用新配置，无需重启）。已保存的明文密钥不回显，留空保持不变、输入新值则替换（`env:VAR` 引用原样显示）。
+
 ### 3. 开始对话
 
 ```bash
@@ -173,7 +175,7 @@ WebSocket 协议（客户端 → 服务端）：
 
 服务端事件（与内核 `AgentEvent` 一致）：`ready` / `token` / `reasoning` / `tool_call` / `tool_result` / `done` / `error` / `pong`。
 
-REST：`GET/POST /api/sessions`、`GET/PATCH/DELETE /api/sessions/{id}`、`GET /api/health`、`GET /api/config`。
+REST：`GET/POST /api/sessions`、`GET/PATCH/DELETE /api/sessions/{id}`、`GET /api/health`、`GET /api/config`、`GET/PUT /api/settings`（交互式配置读写，保存后热生效）。
 
 ## 桌面端（Tauri 2）
 

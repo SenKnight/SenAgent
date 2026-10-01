@@ -7,6 +7,7 @@ mod routes;
 mod ws;
 
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Context;
 use axum::{routing::get, Router};
@@ -23,10 +24,33 @@ pub struct ServerConfig {
     pub static_dir: Option<PathBuf>,
 }
 
-/// 共享状态：整个服务持有同一个 Agent（内核为 Arc 化，Clone 廉价）。
+/// 共享状态：服务持有当前 Agent；配置更新时原子替换。
+///
+/// WS 每收到一轮消息都取最新快照，因此页面保存配置后无需重启即生效。
 #[derive(Clone)]
 pub struct AppState {
-    pub agent: Agent,
+    agent: Arc<RwLock<Agent>>,
+}
+
+impl AppState {
+    pub fn new(agent: Agent) -> Self {
+        Self {
+            agent: Arc::new(RwLock::new(agent)),
+        }
+    }
+
+    /// 取当前 Agent 快照（内部字段均为 Arc，克隆廉价）。
+    pub fn agent(&self) -> Agent {
+        self.agent
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// 配置热更新：在集合内替换为新构建的 Agent。
+    pub fn replace_agent(&self, agent: Agent) {
+        *self.agent.write().unwrap_or_else(|e| e.into_inner()) = agent;
+    }
 }
 
 /// 构建路由（供 `serve` 与后续集成测试复用）。
@@ -34,6 +58,10 @@ pub fn build_router(state: AppState, static_dir: Option<PathBuf>) -> Router {
     let mut app = Router::new()
         .route("/api/health", get(routes::health))
         .route("/api/config", get(routes::config_info))
+        .route(
+            "/api/settings",
+            get(routes::get_settings).put(routes::put_settings),
+        )
         .route(
             "/api/sessions",
             get(routes::list_sessions).post(routes::create_session),
@@ -74,7 +102,7 @@ pub async fn serve_on(
     agent: Agent,
     static_dir: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let app = build_router(AppState { agent }, static_dir);
+    let app = build_router(AppState::new(agent), static_dir);
     axum::serve(listener, app)
         .await
         .context("HTTP 服务异常退出")?;
