@@ -1,6 +1,6 @@
 //! 搜索工具：glob 文件匹配 / grep 内容检索。
 
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 
 use async_trait::async_trait;
 use schemars::JsonSchema;
@@ -198,7 +198,7 @@ impl Tool for GrepTool {
                 }
                 hits.push(format!(
                     "{}:{}: {}",
-                    entry.path().display(),
+                    normalize_path(entry.path()),
                     i + 1,
                     clip(line.trim_end(), 300)
                 ));
@@ -231,11 +231,15 @@ impl Tool for GrepTool {
     }
 }
 
-/// 展示路径：优先相对搜索根目录。
+/// 展示路径：优先相对搜索根目录，并统一 `/` 分隔符。
 fn display_path(p: &Path, base: &str) -> String {
-    p.strip_prefix(Path::new(base))
-        .map(|r| r.display().to_string())
-        .unwrap_or_else(|_| p.display().to_string())
+    let rel = p.strip_prefix(Path::new(base)).unwrap_or(p);
+    normalize_path(rel)
+}
+
+/// 输出路径统一使用 `/` 分隔符（Windows 原生为 `\`，统一后跨平台一致且与工具输入习惯一致）。
+fn normalize_path(p: &Path) -> String {
+    p.display().to_string().replace(MAIN_SEPARATOR, "/")
 }
 
 /// 截断单行（不追加统计说明，仅省略号）。
