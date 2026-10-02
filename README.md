@@ -58,14 +58,6 @@ default_provider = "deepseek"
 context_window = 128000     # 上下文 token 近似预算（用于历史截断）
 max_tool_rounds = 25        # 单轮用户输入的最大工具调用轮数
 
-
-[[providers]]
-name = "qoder"
-base_url = "sungrow-of-enterprise.vpc.qoder.com.cn/v1"
-api_key = "env:QODER_API_KEY"   # 支持 env:VAR 引用环境变量，也可直接填 "sk-..."
-model = "deepseek-flash"
-wire_api = "chat"                  # chat（/v1/chat/completions）或 responses（/v1/responses）
-
 [[providers]]
 name = "deepseek"
 base_url = "https://api.deepseek.com/v1"
