@@ -1,0 +1,19 @@
+{
+  "name": "@senknight/sen-darwin-arm64",
+  "version": "0.1.0",
+  "description": "SenAgent CLI 二进制（macOS arm64）",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/sen"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SenKnight/SenAgent.git"
+  }
+}

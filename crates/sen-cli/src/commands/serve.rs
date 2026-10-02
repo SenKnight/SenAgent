@@ -1,4 +1,6 @@
-//! `sen serve`：启动 Web 服务（浏览器 / 桌面端共用入口）。
+//! `sen serve`：开发模式启动 Web 服务（托管外部 `frontend/dist` 目录）。
+//!
+//! 面向终端用户的单文件模式见 `sen web`（前端已内嵌）。
 
 use std::path::PathBuf;
 
@@ -21,12 +23,13 @@ pub async fn run(
     if let Some(dir) = &static_dir {
         println!("托管前端静态资源: {}", dir.display());
     } else {
-        println!("提示: 未找到前端产物 frontend/dist（仅提供 API），可在项目根运行或用 --static-dir <路径> 指定");
+        println!("提示: 未找到前端产物 frontend/dist（仅提供 API）；如需内嵌页面请用 `sen web`，或用 --static-dir <路径> 指定");
     }
     let cfg = sen_server::ServerConfig {
         host: host.clone(),
         port,
         static_dir,
+        assets: None,
     };
     println!("SenAgent Web 服务: http://{host}:{port}");
     sen_server::serve(agent, cfg).await

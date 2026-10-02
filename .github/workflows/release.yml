@@ -13,25 +13,54 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── CLI（sen 二进制）：三平台构建 + 单元测试 ────────────────────────────
+  # ── CLI（sen 二进制）：三平台构建 + 单元测试 + 内嵌前端 ──────────────────
   cli:
-    name: CLI (${{ matrix.artifact }})
+    name: CLI (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
-            artifact: sen-linux-x86_64
+            platform: linux-x86_64
+            binary: target/release/sen
           - os: macos-14
-            artifact: sen-macos-aarch64
+            platform: macos-aarch64
+            binary: target/release/sen
           - os: windows-2022
-            artifact: sen-windows-x86_64
+            platform: windows-x86_64
+            binary: target/release/sen.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 解析版本号
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: 同步版本号（tag 触发）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
+
+      - name: 构建前端（随后内嵌进 CLI 二进制）
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
 
       - name: 测试（sen-core + sen-server）
         run: cargo test --workspace --verbose
@@ -41,30 +70,33 @@ jobs:
 
       - name: 打包（unix）
         if: runner.os != 'Windows'
+        shell: bash
         run: |
+          name="sen-cli-v${VERSION}-${{ matrix.platform }}"
           mkdir -p dist
-          cp target/release/sen dist/
+          cp ${{ matrix.binary }} dist/sen
           cp README.md dist/
-          tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
+          tar -czf "$name.tar.gz" -C dist .
+          echo "PKG=$name.tar.gz" >> "$GITHUB_ENV"
 
       - name: 打包（windows）
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $name = "sen-cli-v$env:VERSION-${{ matrix.platform }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/sen.exe dist/
+          Copy-Item ${{ matrix.binary }} dist/sen.exe
           Copy-Item README.md dist/
-          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
+          Compress-Archive -Path dist/* -DestinationPath "$name.zip"
+          "PKG=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: |
-            ${{ matrix.artifact }}.tar.gz
-            ${{ matrix.artifact }}.zip
-          if-no-files-found: ignore
+          name: sen-cli-v${{ env.VERSION }}-${{ matrix.platform }}
+          path: ${{ env.PKG }}
+          if-no-files-found: error
 
-  # ── 桌面端（Tauri 2 单二进制）：dmg / msi / AppImage+deb ───────────────
+  # ── 桌面端（Tauri 2 安装包）：dmg / msi / exe / AppImage + deb/rpm ───────
   desktop:
     name: Desktop (${{ matrix.os }})
     strategy:
@@ -88,6 +120,20 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: 解析版本号
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: 同步版本号（tag 触发，决定安装包文件名）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
 
       - name: Linux 系统依赖（WebKitGTK 等）
         if: runner.os == 'Linux'
@@ -113,32 +159,70 @@ jobs:
           projectPath: crates/sen-desktop
           args: --verbose
 
-      - name: 收集安装包
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.os }}
-          path: |
-            crates/sen-desktop/target/release/bundle/**/*.deb
-            crates/sen-desktop/target/release/bundle/**/*.rpm
-            crates/sen-desktop/target/release/bundle/**/*.AppImage
-            crates/sen-desktop/target/release/bundle/**/*.dmg
-            crates/sen-desktop/target/release/bundle/**/*.msi
-            crates/sen-desktop/target/release/bundle/**/*.exe
-          if-no-files-found: ignore
+      - name: 收集安装包（平铺到 out/）
+        shell: bash
+        run: |
+          mkdir -p out
+          find crates/sen-desktop/target/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \) \
+            -exec cp {} out/ \;
+          ls -lh out
 
-  # ── 发布：汇总全部产物到 GitHub Release（仅 tag 触发） ─────────────
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sen-desktop-v${{ env.VERSION }}-${{ matrix.os }}
+          path: out/*
+          if-no-files-found: error
+
+  # ── 发布：汇总产物到 GitHub Release，并发布 npm 平台子包 ────────────────
   publish:
     name: Publish Release
     needs: [cli, desktop]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: 同步版本号
+        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - name: 发布到 Release
+      - name: 查看产物清单
+        run: find dist -type f | sort
+
+      - name: 提取 npm 平台二进制
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p npm/linux-x64/bin npm/darwin-arm64/bin npm/win32-x64/bin
+          tar -xzf "dist/sen-cli-v$V-linux-x86_64.tar.gz" -C npm/linux-x64/bin ./sen
+          tar -xzf "dist/sen-cli-v$V-macos-aarch64.tar.gz" -C npm/darwin-arm64/bin ./sen
+          unzip -o -j "dist/sen-cli-v$V-windows-x86_64.zip" sen.exe -d npm/win32-x64/bin
+          chmod +x npm/linux-x64/bin/sen npm/darwin-arm64/bin/sen
+          ls -l npm/*/bin
+
+      - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+
+      - name: 发布到 npm（未配置 NPM_TOKEN 时自动跳过）
+        if: env.NPM_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for d in linux-x64 darwin-arm64 win32-x64 .; do
+            echo "── npm publish npm/$d"
+            (cd "npm/$d" && npm publish --access public)
+          done

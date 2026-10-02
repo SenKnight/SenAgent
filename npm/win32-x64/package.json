@@ -1,0 +1,19 @@
+{
+  "name": "@senknight/sen-win32-x64-msvc",
+  "version": "0.1.0",
+  "description": "SenAgent CLI 二进制（Windows x64）",
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/sen.exe"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SenKnight/SenAgent.git"
+  }
+}

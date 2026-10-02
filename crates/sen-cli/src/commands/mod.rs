@@ -5,6 +5,7 @@ pub mod repl;
 pub mod serve;
 pub mod sessions;
 pub mod skill;
+pub mod web;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;

@@ -1,6 +1,7 @@
 //! sen：SenAgent CLI（进程内直连内核，不经过 HTTP）。
 
 mod commands;
+mod web_assets;
 
 use std::path::PathBuf;
 
@@ -51,7 +52,7 @@ enum Command {
         #[command(subcommand)]
         cmd: SkillCmd,
     },
-    /// 启动 Web 服务（浏览器与桌面端共用同一入口）
+    /// 启动 Web 服务（开发模式：托管 frontend/dist 目录，可热更新调试）
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
@@ -60,6 +61,16 @@ enum Command {
         /// 前端构建产物目录（默认自动探测 ./frontend/dist）
         #[arg(long)]
         static_dir: Option<PathBuf>,
+    },
+    /// 启动 Web 界面（前端已内嵌于二进制，单文件即可用）
+    Web {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value_t = 8642)]
+        port: u16,
+        /// 启动后自动打开浏览器
+        #[arg(long)]
+        open: bool,
     },
 }
 
@@ -137,5 +148,8 @@ async fn main() -> anyhow::Result<()> {
             port,
             static_dir,
         } => commands::serve::run(cli.provider, host, port, static_dir).await,
+        Command::Web { host, port, open } => {
+            commands::web::run(cli.provider, host, port, open).await
+        }
     }
 }

@@ -20,7 +20,7 @@ CLI (clap, Rust)      Web 浏览器            桌面端 (Tauri 2)
 ```
 
 - **sen-core**：内核库。Agent 主循环（流式 + 多轮工具调用）、Provider 双协议适配、工具系统、技能系统、AGENTS.md 指导提示词、SQLite 会话持久化。
-- **sen-server**：axum 服务。WebSocket 聊天端点 + REST 会话 CRUD + 生产模式托管前端静态资源；被 CLI（`sen serve`）与桌面端（进程内 `serve_on`）复用。
+- **sen-server**：axum 服务。WebSocket 聊天端点 + REST 会话 CRUD + 前端静态资源托管（磁盘目录或内嵌资源两种来源）；被 CLI（`sen serve` / `sen web`）与桌面端（进程内 `serve_on`）复用。
 - **sen-cli**：`sen` 二进制，clap 命令，进程内直连内核（不绕 HTTP）。
 - **sen-desktop**：Tauri 2 壳，启动时进程内起 axum（127.0.0.1 随机端口）并打开窗口指向本地服务 —— 单进程、单二进制、无 sidecar。
 - **frontend**：React 19 + TS + Vite + Tailwind 4 + Zustand。Web 与桌面共用同一套前端代码与 HTTP/WS 协议。
@@ -36,6 +36,9 @@ cargo install --path crates/sen-cli
 # 方式二：仅构建，手动把产物放进 PATH
 cargo build --release -p sen-cli
 cp target/release/sen ~/.local/bin/     # Windows：将 target\release 目录加入 PATH
+
+# 方式三：npm（需 Node ≥18，自动按平台选择对应二进制）
+npm install -g @senknight/sen
 ```
 
 注意 `cargo build` 只是产出 `target/release/sen`，**不会注册命令**；不安装时需写完整路径调用（如 `./target/release/sen run "你好"`），或临时 `export PATH="$PWD/target/release:$PATH"`。安装后用 `sen --version` 验证；代码更新后重新执行 `cargo install --path crates/sen-cli` 覆盖即可。
@@ -162,7 +165,16 @@ sen skill show git-helper                                       # 查看全文
 
 两处内容都会注入系统提示词，与内置人设、技能索引合并。
 
-## Web 服务与前端
+## Web 界面与服务
+
+**终端用户：单文件模式（推荐）** —— CLI 二进制已内嵌前端产物，任意目录直接启动：
+
+```bash
+sen web                  # 启动 Web UI：http://127.0.0.1:8642
+sen web --open           # 同时自动打开浏览器
+```
+
+**开发/自定义：目录托管模式** —— 自行构建前端并由 `sen serve` 从磁盘托管：
 
 ```bash
 cd frontend
@@ -173,7 +185,10 @@ cd ..                    # 回到项目根（sen serve 会自动探测 frontend/
 sen serve                # 浏览器打开 http://127.0.0.1:8642 即完整界面
 ```
 
-构建产物**不需要单独部署**：`sen serve` 会以同源方式同时提供页面与 API（页面与 WebSocket 都走 `:8642`）。在任意目录运行 `sen` 时，用 `--static-dir` 指定产物位置：
+两种模式都以**同源方式**同时提供页面、API 与 WebSocket（页面与 WS 都走 `:8642`）：
+
+- `sen web`：前端在**编译期嵌入二进制**（`frontend/dist`，约 0.6MB），单文件即用、可离线分发；构建 CLI 时若前端产物缺失，会内嵌占位页并提示（先 `cd frontend && npm run build` 再重装 CLI 即可）
+- `sen serve`：托管磁盘上的目录，支持前端热更新调试；在任意目录运行时用 `--static-dir` 指定产物位置：
 
 ```bash
 sen serve --static-dir /path/to/SenAgent/frontend/dist
@@ -217,7 +232,7 @@ cargo tauri dev          # 开发模式：窗口指向进程内本地服务
 cargo tauri build        # 打包 dmg / msi / AppImage+deb
 ```
 
-打包产物位于 `crates/sen-desktop/target/release/bundle/`（Linux 为 `deb/` 与 `appimage/`）。
+打包产物位于 `crates/sen-desktop/target/release/bundle/`（Linux 为 `deb/`、`rpm/` 与 `appimage/`），文件名含 `tauri.conf.json` 中的版本号。
 
 > 注：AppImage 打包需从 GitHub releases 下载打包工具（AppRun / linuxdeploy），国内网络可能超时；遇到时可直接用 deb，或挂代理后执行 `cargo tauri build --bundles appimage` 补打（工具会缓存到 `~/.cache/tauri/`，也可手动将 `AppRun-x86_64` 与 `linuxdeploy-07333c6-x86_64.AppImage` 放入该目录离线打包）。
 
@@ -253,9 +268,19 @@ cd frontend && npm run typecheck && npm run build
 
 `.github/workflows/release.yml`：
 
-- **cli** job：三平台矩阵（ubuntu-24.04 / macos-14 / windows-2022）跑单元测试 + release 构建，打包 tar.gz / zip；
-- **desktop** job：三平台构建 Tauri 安装包（dmg / msi / AppImage + deb/rpm），以 artifact 形式保留；
-- **publish** job：推送 `v*` tag 时触发，汇总全部产物发布到 GitHub Releases（Windows 的 msi / setup.exe、macOS 的 dmg、Linux 的 deb / rpm / AppImage，以及三平台 CLI 压缩包）。
+- **cli** job：三平台矩阵（Linux / macOS / Windows）跑单元测试 + release 构建（前端一并内嵌），产物命名为 `sen-cli-v<版本>-<平台>.tar.gz` / `.zip`（如 `sen-cli-v0.1.4-linux-x86_64.tar.gz`）；
+- **desktop** job：三平台构建 Tauri 安装包（dmg / msi / setup.exe / AppImage / deb / rpm），平铺保留为 artifact；
+- **publish** job：推送 `v*` tag 时触发，汇总全部产物发布到 GitHub Releases；并从 CLI 产物中提取二进制，发布 npm 主包与平台子包（`@senknight/sen` + `@senknight/sen-linux-x64-gnu` / `sen-darwin-arm64` / `sen-win32-x64-msvc`）。
+
+发版流程（版本号由 tag 驱动，一处修改、全局生效）：
+
+```bash
+node scripts/sync-version.mjs 0.1.3     # 写入 Cargo.toml / tauri.conf.json / frontend / npm
+git commit -am "chore(release): v0.1.3"
+git tag v0.1.3 && git push origin v0.1.3
+```
+
+CI 在 tag 构建时自动同步版本号（安装包文件名、CLI 包名、`sen --version` 全部一致）；npm 发布需在仓库 **Settings → Secrets → Actions** 配置 `NPM_TOKEN`，未配置时自动跳过。
 
 手动触发（workflow_dispatch）只构建不发布，产物在该次运行的 **Actions → Artifacts** 中下载（需登录）。
 

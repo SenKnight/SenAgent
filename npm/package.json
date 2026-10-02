@@ -1,0 +1,33 @@
+{
+  "name": "@senknight/sen",
+  "version": "0.1.0",
+  "description": "SenAgent CLI：跨平台个人 AI Agent（内置 Web UI，单文件即用）",
+  "license": "MIT",
+  "bin": {
+    "sen": "bin/sen.js"
+  },
+  "files": [
+    "bin/sen.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "llm",
+    "assistant",
+    "senagent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SenKnight/SenAgent.git"
+  },
+  "homepage": "https://github.com/SenKnight/SenAgent",
+  "optionalDependencies": {
+    "@senknight/sen-linux-x64-gnu": "0.1.0",
+    "@senknight/sen-darwin-arm64": "0.1.0",
+    "@senknight/sen-win32-x64-msvc": "0.1.0"
+  }
+}
