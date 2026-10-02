@@ -66,7 +66,7 @@ patch('frontend/package.json', /"version":\s*"[^"]+"/, `"version": "${version}"`
 patch('npm/package.json', /"version":\s*"[^"]+"/, `"version": "${version}"`);
 patch(
   'npm/package.json',
-  new RegExp(`"${SCOPE}\\\\/(sen-[^"]+)":\\\\s*"[^"]+"`, 'g'),
+  new RegExp(`"${SCOPE}/(sen-[^"]+)":\\s*"[^"]+"`, 'g'),
   (m, name) => `"${SCOPE}/${name}": "${version}"`,
 );
 
@@ -78,6 +78,19 @@ if (existsSync(npmDir)) {
     if (existsSync(pkg)) {
       patch(`npm/${dir}/package.json`, /"version":\s*"[^"]+"/, `"version": "${version}"`);
     }
+  }
+}
+
+// 自检：主包 optionalDependencies 的平台子包版本必须与主包一致，
+// 不一致时 npm 会静默跳过可选依赖（平台二进制装不上），直接失败阻断发布。
+const mainPkg = join(ROOT, 'npm', 'package.json');
+if (existsSync(mainPkg)) {
+  const { optionalDependencies = {} } = JSON.parse(readFileSync(mainPkg, 'utf8'));
+  const stale = Object.entries(optionalDependencies).filter(([, v]) => v !== version);
+  if (stale.length > 0) {
+    console.error(`错误: npm/package.json 的 optionalDependencies 与主包版本不一致（应为 ${version}）:`);
+    for (const [name, v] of stale) console.error(`  - ${name}: ${v}`);
+    process.exit(1);
   }
 }
 
