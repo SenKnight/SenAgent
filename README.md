@@ -98,6 +98,7 @@ sen run "读取 README 并总结"     # 单次问答（流式输出 + 工具调�
 sen chat                         # 交互式 REPL（/exit 退出，/new 新会话）
 sen sessions                     # 列出历史会话
 sen sessions show <id>           # 查看会话消息
+sen web --open                   # 启动 Web 界面（前端已内嵌，自动打开浏览器）
 sen --provider ollama run "你好" # 临时切换 provider
 ```
 
@@ -110,7 +111,10 @@ sen --provider ollama run "你好" # 临时切换 provider
 | `sen sessions [list\|show\|rename\|delete]` | 会话管理（支持 id 前缀匹配） |
 | `sen config [show\|init\|path]` | 配置查看 / 初始化 / 路径 |
 | `sen skill [list\|show\|new\|dir]` | 技能浏览 / 查看 / 创建 / 打开目录 |
-| `sen serve [--host --port --static-dir]` | 启动 Web 服务（默认 :8642） |
+| `sen web [--host --port --open]` | 启动 Web 界面（前端已内嵌于二进制，单文件即用；`--open` 自动打开浏览器） |
+| `sen serve [--host --port --static-dir]` | 启动 Web 服务并托管磁盘上的 `frontend/dist`（开发 / 热更新调试用） |
+
+全局参数 `--provider <name>` / `--session <id>` 可置于任意子命令之前，例如 `sen --provider ollama chat`。
 
 ## 内置工具
 
