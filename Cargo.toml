@@ -10,7 +10,7 @@ exclude = ["crates/sen-desktop"]
 # （Linux: webkit2gtk-4.1 等），不参与日常构建；桌面端命令见 README。
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 

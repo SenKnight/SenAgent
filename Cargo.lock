@@ -1689,7 +1689,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sen-cli"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "sen-core"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1731,7 +1731,7 @@ dependencies = [
 
 [[package]]
 name = "sen-server"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",

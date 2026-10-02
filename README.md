@@ -268,19 +268,20 @@ cd frontend && npm run typecheck && npm run build
 
 `.github/workflows/release.yml`：
 
-- **cli** job：三平台矩阵（Linux / macOS / Windows）跑单元测试 + release 构建（前端一并内嵌），产物命名为 `sen-cli-v<版本>-<平台>.tar.gz` / `.zip`（如 `sen-cli-v0.1.4-linux-x86_64.tar.gz`）；
+- **cli** job：三平台矩阵（Linux / macOS / Windows）跑单元测试 + release 构建（前端一并内嵌），产物命名为 `sen-cli-v<版本>-<平台>.tar.gz` / `.zip`（如 `sen-cli-v0.1.5-linux-x86_64.tar.gz`）；
 - **desktop** job：三平台构建 Tauri 安装包（dmg / msi / setup.exe / AppImage / deb / rpm），平铺保留为 artifact；
 - **publish** job：推送 `v*` tag 时触发，汇总全部产物发布到 GitHub Releases；并从 CLI 产物中提取二进制，发布 npm 主包与平台子包（`@senknight/sen` + `@senknight/sen-linux-x64-gnu` / `sen-darwin-arm64` / `sen-win32-x64-msvc`）。
 
-发版流程（版本号由 tag 驱动，一处修改、全局生效）：
+发版流程（版本号落在源码，tag 与源码版本必须一致）：
 
 ```bash
-node scripts/sync-version.mjs 0.1.3     # 写入 Cargo.toml / tauri.conf.json / frontend / npm
-git commit -am "chore(release): v0.1.3"
-git tag v0.1.3 && git push origin v0.1.3
+node scripts/sync-version.mjs 0.1.5     # 写入 Cargo.toml / tauri.conf.json / frontend / npm
+cargo check                             # 让 cargo 同步 Cargo.lock 中工作区成员的版本
+git commit -am "chore(release): v0.1.5"
+git tag v0.1.5 && git push origin main v0.1.5
 ```
 
-CI 在 tag 构建时自动同步版本号（安装包文件名、CLI 包名、`sen --version` 全部一致）；npm 发布需在仓库 **Settings → Secrets → Actions** 配置 `NPM_TOKEN`，未配置时自动跳过。
+CI 构建时会先用 `node scripts/sync-version.mjs --check` 校验 tag 与源码版本一致，不一致直接失败，因此不会出现「安装包 / CLI / npm 包版本与 tag 不符」的情况（`sen --version`、产物文件名、npm 包版本三者天然一致）。npm 发布需在仓库 **Settings → Secrets → Actions** 配置 `NPM_TOKEN`，未配置时自动跳过。
 
 手动触发（workflow_dispatch）只构建不发布，产物在该次运行的 **Actions → Artifacts** 中下载（需登录）。
 

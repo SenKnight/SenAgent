@@ -1,6 +1,6 @@
 {
   "name": "@senknight/sen-darwin-arm64",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "SenAgent CLI 二进制（macOS arm64）",
   "license": "MIT",
   "os": [

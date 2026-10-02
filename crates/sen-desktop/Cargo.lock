@@ -3142,7 +3142,7 @@ dependencies = [
 
 [[package]]
 name = "sen-core"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3167,7 +3167,7 @@ dependencies = [
 
 [[package]]
 name = "sen-desktop"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "sen-core",
@@ -3179,7 +3179,7 @@ dependencies = [
 
 [[package]]
 name = "sen-server"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",

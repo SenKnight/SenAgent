@@ -51,10 +51,10 @@ jobs:
             echo "VERSION=dev" >> "$GITHUB_ENV"
           fi
 
-      - name: 同步版本号（tag 触发）
+      - name: 校验版本号（tag 与源码必须一致）
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
+        run: node scripts/sync-version.mjs --check "${GITHUB_REF_NAME}"
 
       - name: 构建前端（随后内嵌进 CLI 二进制）
         working-directory: frontend
@@ -130,10 +130,10 @@ jobs:
             echo "VERSION=dev" >> "$GITHUB_ENV"
           fi
 
-      - name: 同步版本号（tag 触发，决定安装包文件名）
+      - name: 校验版本号（tag 与源码必须一致）
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
+        run: node scripts/sync-version.mjs --check "${GITHUB_REF_NAME}"
 
       - name: Linux 系统依赖（WebKitGTK 等）
         if: runner.os == 'Linux'
@@ -191,8 +191,8 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: 同步版本号
-        run: node scripts/sync-version.mjs "${GITHUB_REF_NAME}"
+      - name: 校验版本号（tag 与源码必须一致）
+        run: node scripts/sync-version.mjs --check "${GITHUB_REF_NAME}"
 
       - uses: actions/download-artifact@v4
         with:

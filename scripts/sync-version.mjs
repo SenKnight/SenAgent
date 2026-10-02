@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-// 版本号单一来源同步：把 tag / 参数中的版本写入所有需要版本的位置。
+// 版本号单一来源：写入（发版）或校验（CI）。
 //
 // 用法:
-//   node scripts/sync-version.mjs 0.1.3   # 显式指定（可带 v 前缀）
-//   node scripts/sync-version.mjs         # 从 tag 推导：GITHUB_REF_NAME 或 git describe
+//   node scripts/sync-version.mjs 0.1.5      # 写入所有版本位置（可带 v 前缀）
+//   node scripts/sync-version.mjs            # 版本号取自 GITHUB_REF_NAME / git describe
+//   node scripts/sync-version.mjs --check    # 仅校验，不一致时退出码 1（CI 使用）
 //
-// 同步位置：
+// 同步位置:
 //   Cargo.toml（workspace，sen-core/sen-server/sen-cli 继承）
-//   crates/sen-desktop/Cargo.toml、crates/sen-desktop/tauri.conf.json（安装包命名）
+//   crates/sen-desktop/Cargo.toml、crates/sen-desktop/tauri.conf.json（决定安装包命名）
 //   frontend/package.json
-//   npm/package.json（主包，含 optionalDependencies 版本）+ npm/<platform>/package.json
+//   npm/package.json（主包 + optionalDependencies 平台子包）+ npm/<platform>/package.json
+//
+// 发版流程: node scripts/sync-version.mjs <版本> → commit → git tag v<版本> → push
+// CI 只校验 tag 与源码版本一致，不再改写源码，保证 tag 内容与版本号一一对应。
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -18,10 +22,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCOPE = '@senknight';
+const CHECK = process.argv.includes('--check');
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 
 function resolveVersion() {
-  const arg = process.argv[2];
-  if (arg) return arg;
+  if (args[0]) return args[0];
   if (process.env.GITHUB_REF_NAME) return process.env.GITHUB_REF_NAME;
   try {
     return execSync('git describe --tags --exact-match', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] })
@@ -34,67 +39,72 @@ function resolveVersion() {
 
 const version = resolveVersion().replace(/^v/, '');
 if (!/^\d+\.\d+\.\d+/.test(version)) {
-  console.error('用法: node scripts/sync-version.mjs <version>  例如: node scripts/sync-version.mjs 0.1.3');
+  console.error('用法: node scripts/sync-version.mjs <版本> [--check]  例如: node scripts/sync-version.mjs 0.1.5');
   process.exit(1);
 }
 
-const changed = [];
+// 每项 = 文件 + 三段捕获组（前缀 / 版本 / 后缀）。
+// write 模式把中间组替换为 version；check 模式比对中间组并报告不一致。
+const targets = [
+  { file: 'Cargo.toml', re: /^(version = ")([^"]+)(")/m },
+  { file: 'crates/sen-desktop/Cargo.toml', re: /^(version = ")([^"]+)(")/m },
+  { file: 'crates/sen-desktop/tauri.conf.json', re: /("version":\s*")([^"]+)(")/ },
+  { file: 'frontend/package.json', re: /("version":\s*")([^"]+)(")/ },
+  { file: 'npm/package.json', re: /("version":\s*")([^"]+)(")/ },
+  // 主包 optionalDependencies 的平台子包版本：与主包不一致时 npm 会静默跳过可选依赖。
+  // 内部包名必须用非捕获组，否则捕获组编号错位会把包名当版本写进值里。
+  { file: 'npm/package.json', re: new RegExp(`("${SCOPE}/(?:sen-[^"]+)":\\s*")([^"]+)(")`, 'g') },
+];
 
-/** 对文件做正则替换；内容无变化时跳过（幂等）。replacement 可为字符串或函数。 */
-function patch(relPath, pattern, replacement) {
-  const file = join(ROOT, relPath);
-  if (!existsSync(file)) return;
-  const src = readFileSync(file, 'utf8');
-  const out = src.replace(pattern, replacement);
-  if (out !== src) {
-    writeFileSync(file, out);
-    changed.push(relPath);
-  }
-}
-
-// Rust workspace（sen-core / sen-server / sen-cli 均 version.workspace = true）
-patch('Cargo.toml', /^version = "[^"]+"/m, `version = "${version}"`);
-
-// 桌面端：crate 版本 + Tauri 打包版本（决定 msi/dmg/deb/AppImage 文件名）
-patch('crates/sen-desktop/Cargo.toml', /^version = "[^"]+"/m, `version = "${version}"`);
-patch('crates/sen-desktop/tauri.conf.json', /"version":\s*"[^"]+"/, `"version": "${version}"`);
-
-// 前端
-patch('frontend/package.json', /"version":\s*"[^"]+"/, `"version": "${version}"`);
-
-// npm 主包：自身版本 + optionalDependencies 中的平台子包版本
-patch('npm/package.json', /"version":\s*"[^"]+"/, `"version": "${version}"`);
-patch(
-  'npm/package.json',
-  new RegExp(`"${SCOPE}/(sen-[^"]+)":\\s*"[^"]+"`, 'g'),
-  (m, name) => `"${SCOPE}/${name}": "${version}"`,
-);
-
-// npm 平台子包
+// npm 平台子包（目录动态发现）
 const npmDir = join(ROOT, 'npm');
 if (existsSync(npmDir)) {
   for (const dir of readdirSync(npmDir)) {
-    const pkg = join(npmDir, dir, 'package.json');
-    if (existsSync(pkg)) {
-      patch(`npm/${dir}/package.json`, /"version":\s*"[^"]+"/, `"version": "${version}"`);
+    if (existsSync(join(npmDir, dir, 'package.json'))) {
+      targets.push({ file: `npm/${dir}/package.json`, re: /("version":\s*")([^"]+)(")/ });
     }
   }
 }
 
-// 自检：主包 optionalDependencies 的平台子包版本必须与主包一致，
-// 不一致时 npm 会静默跳过可选依赖（平台二进制装不上），直接失败阻断发布。
-const mainPkg = join(ROOT, 'npm', 'package.json');
-if (existsSync(mainPkg)) {
-  const { optionalDependencies = {} } = JSON.parse(readFileSync(mainPkg, 'utf8'));
-  const stale = Object.entries(optionalDependencies).filter(([, v]) => v !== version);
-  if (stale.length > 0) {
-    console.error(`错误: npm/package.json 的 optionalDependencies 与主包版本不一致（应为 ${version}）:`);
-    for (const [name, v] of stale) console.error(`  - ${name}: ${v}`);
-    process.exit(1);
+const changed = [];
+const problems = [];
+
+for (const { file, re } of targets) {
+  const path = join(ROOT, file);
+  if (!existsSync(path)) continue;
+  const src = readFileSync(path, 'utf8');
+  const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  const matches = [...src.matchAll(global)];
+
+  // 一处都匹配不到说明正则与文件结构已脱节，必须暴露（否则会静默漏改版本号）
+  if (matches.length === 0) {
+    problems.push(`${file}: 未匹配到版本字段（${re.source}）`);
+    continue;
+  }
+
+  if (CHECK) {
+    for (const m of matches) {
+      if (m[2] !== version) problems.push(`${file}: ${m[1].trim()} 当前 "${m[2]}"（应为 ${version}）`);
+    }
+  } else {
+    const out = src.replace(global, (_m, pre, _v, post) => `${pre}${version}${post}`);
+    if (out !== src) {
+      writeFileSync(path, out);
+      changed.push(file);
+    }
   }
 }
 
-if (changed.length === 0) {
+if (problems.length > 0) {
+  console.error(CHECK ? `版本校验失败（源码版本应为 ${version}）：` : `版本同步异常（版本应为 ${version}）：`);
+  for (const p of problems) console.error(`  - ${p}`);
+  if (CHECK) console.error(`\n发版前先执行: node scripts/sync-version.mjs ${version}`);
+  process.exit(1);
+}
+
+if (CHECK) {
+  console.log(`版本校验通过：所有位置均为 ${version}`);
+} else if (changed.length === 0) {
   console.log(`版本已是 ${version}，无改动`);
 } else {
   console.log(`已同步版本 ${version}:`);

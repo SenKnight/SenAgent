@@ -1,6 +1,6 @@
 [package]
 name = "sen-desktop"
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 description = "SenAgent desktop app: Tauri 2 shell embedding sen-core + sen-server in-process"
