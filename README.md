@@ -254,7 +254,10 @@ cd frontend && npm run typecheck && npm run build
 `.github/workflows/release.yml`：
 
 - **cli** job：三平台矩阵（ubuntu-24.04 / macos-14 / windows-2022）跑单元测试 + release 构建，打包 tar.gz / zip；
-- **desktop** job：三平台构建 Tauri 安装包（dmg / msi / AppImage+deb），首次推送 `v*` tag 触发。
+- **desktop** job：三平台构建 Tauri 安装包（dmg / msi / AppImage + deb/rpm），以 artifact 形式保留；
+- **publish** job：推送 `v*` tag 时触发，汇总全部产物发布到 GitHub Releases（Windows 的 msi / setup.exe、macOS 的 dmg、Linux 的 deb / rpm / AppImage，以及三平台 CLI 压缩包）。
+
+手动触发（workflow_dispatch）只构建不发布，产物在该次运行的 **Actions → Artifacts** 中下载（需登录）。
 
 ## License
 

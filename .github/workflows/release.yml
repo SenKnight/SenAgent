@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -109,3 +112,33 @@ jobs:
         with:
           projectPath: crates/sen-desktop
           args: --verbose
+
+      - name: 收集安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            crates/sen-desktop/target/release/bundle/**/*.deb
+            crates/sen-desktop/target/release/bundle/**/*.rpm
+            crates/sen-desktop/target/release/bundle/**/*.AppImage
+            crates/sen-desktop/target/release/bundle/**/*.dmg
+            crates/sen-desktop/target/release/bundle/**/*.msi
+            crates/sen-desktop/target/release/bundle/**/*.exe
+          if-no-files-found: ignore
+
+  # ── 发布：汇总全部产物到 GitHub Release（仅 tag 触发） ─────────────
+  publish:
+    name: Publish Release
+    needs: [cli, desktop]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 发布到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
