@@ -7,12 +7,12 @@
 ```
 CLI (clap, Rust)      Web 浏览器            桌面端 (Tauri 2)
     │                     │                     │
-    │ 进程内直连            │ HTTP / WebSocket    │ 进程内直连（后端嵌入同进程）
+    │ 进程内直连           │ HTTP / WebSocket    │ 进程内直连（后端嵌入同进程）
     ▼                     ▼                     ▼
 ┌──────────────────────────────────────────────────────┐
-│               sen-core Rust 内核（tokio）              │
+│               sen-core Rust 内核（tokio）             │
 │   Agent Loop │ Provider 层 │ 工具系统 │ 技能 │ 记忆    │
-│          sen-server（axum，sen serve）                 │
+│          sen-server（axum，sen serve）                │
 └──────────────────────────────────────────────────────┘
         │                    │                │
      SQLite             MCP Servers      LLM Providers
@@ -200,12 +200,7 @@ sen serve --static-dir /path/to/SenAgent/frontend/dist
 
 桌面端无需此步骤：`cargo tauri build` 会把前端产物作为内嵌资源一并打包（见下文）。
 
-开发模式（Vite 热更新 + 代理到后端）：
-
-```bash
-sen serve &              # 后端 :8642
-cd frontend && npm run dev   # 前端 :5173，/api 自动代理
-```
+前端热更新联调（Vite HMR + `/api` 代理）见 [开发](#开发) 章节。
 
 WebSocket 协议（客户端 → 服务端）：
 
@@ -262,11 +257,20 @@ npx @tauri-apps/cli@^2 icon crates/sen-desktop/icons/source.png --output crates/
 ## 开发
 
 ```bash
-cargo build              # 构建 workspace（core / server / cli）
-cargo test -p sen-core   # 单元测试
-cargo clippy --all-targets
-cd frontend && npm run typecheck && npm run build
+cargo check                        # 类型检查
+cargo test -p sen-core             # 单元测试
+cargo clippy --all-targets         # lint
+cd frontend && npm run typecheck   # 前端类型检查
 ```
+
+运行方式按你要改的层选一个：
+
+1. **只调 CLI / 内核**：`cargo run -p sen-cli -- chat`（或已安装的 `sen chat`），改 Rust 后自动重编译。
+2. **前后端联调（推荐）**：开两个终端 —— 后端 `cargo run -p sen-cli -- serve`（REST + WebSocket，默认 :8642），前端 `cd frontend && npm run dev`（:5173，自动代理 `/api` 到后端），浏览器打开 http://localhost:5173。改前端热更新，改 Rust 需重启后端。
+3. **验证单文件形态**：`cd frontend && npm run build` → `cargo install --path crates/sen-cli --force` → `sen web --open`。前端为编译期内嵌，改动后必须重建 + 重装。
+4. **桌面端**：`cd crates/sen-desktop && cargo tauri dev`（详见下方桌面端章节）。
+
+> 后端没有独立进程：`sen-server` 是 lib，由 CLI（`sen serve` / `sen web`）与桌面端进程内启动。联调时后端端口需与 `frontend/vite.config.ts` 的 proxy target 一致（默认 8642）；Windows PowerShell 不支持 `&` 后台写法，开两个终端即可。
 
 ## CI / 发布
 

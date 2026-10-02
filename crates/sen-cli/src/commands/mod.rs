@@ -9,12 +9,16 @@ pub mod web;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use sen_core::{Agent, AgentEvent, Config, Store};
+use sen_core::{Agent, AgentEvent, Config, Store, TurnMode};
 
 /// 按配置构建 Agent（进程内直连内核）。
 pub fn build_agent(provider: Option<&str>) -> Result<Agent> {
     let config = Config::load().context("加载配置失败")?;
-    let cwd = std::env::current_dir().context("获取当前目录失败")?;
+    // 优先使用配置中持久化的项目工作目录；无效则退回进程启动目录
+    let cwd = match config.workspace.as_deref().map(std::path::PathBuf::from) {
+        Some(p) if p.is_dir() => p,
+        _ => std::env::current_dir().context("获取当前目录失败")?,
+    };
     Agent::from_config(config, provider, cwd).context("初始化 Agent 失败")
 }
 
@@ -27,7 +31,7 @@ pub fn open_store() -> Result<Store> {
 /// 解析 `--session`：完整 id / 唯一前缀；未指定则新建会话。
 pub fn resolve_session(agent: &Agent, want: Option<&str>) -> Result<String> {
     let Some(w) = want else {
-        return Ok(agent.store().create_session("")?.id);
+        return Ok(agent.store().create_session("", None)?.id);
     };
     let sessions = agent.store().list_sessions()?;
     if let Some(s) = sessions.iter().find(|s| s.id == w) {
@@ -57,7 +61,7 @@ pub async fn run_once(
     let agent = build_agent(provider.as_deref())?;
     let session_id = resolve_session(&agent, session.as_deref())?;
     println!("\x1b[2msession: {session_id}\x1b[0m");
-    let ok = print_stream(agent.run_turn(&session_id, &prompt)).await;
+    let ok = print_stream(agent.run_turn(&session_id, &prompt, TurnMode::Normal)).await;
     if !ok {
         std::process::exit(1);
     }
@@ -138,6 +142,8 @@ pub async fn print_stream<S: futures_util::Stream<Item = AgentEvent>>(stream: S)
                 }
                 ok = true;
             }
+            // CLI 不提供计划模式的交互确认，忽略计划事件（其内容已在正文中输出）。
+            AgentEvent::Plan { .. } => {}
             AgentEvent::Error { message } => {
                 if in_reasoning {
                     print!("\x1b[0m");

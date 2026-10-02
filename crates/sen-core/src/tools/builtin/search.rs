@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::tools::{schema_of, Tool};
+use crate::tools::{resolve_path, schema_of, Tool};
 use crate::util::truncate;
 
 /// grep 遍历时跳过的目录名。
@@ -57,10 +57,12 @@ impl Tool for GlobTool {
         schema_of::<GlobArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base_dir: &Path) -> Result<String> {
         let args: GlobArgs =
             serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
-        let base = args.path.unwrap_or_else(|| ".".into());
+        let base = resolve_path(base_dir, args.path.as_deref().unwrap_or("."))
+            .display()
+            .to_string();
         let full = if Path::new(&args.pattern).is_absolute() {
             args.pattern.clone()
         } else {
@@ -139,14 +141,14 @@ impl Tool for GrepTool {
         schema_of::<GrepArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base_dir: &Path) -> Result<String> {
         let args: GrepArgs =
             serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
         let re = regex::RegexBuilder::new(&args.pattern)
             .case_insensitive(args.case_insensitive.unwrap_or(false))
             .build()
             .map_err(|e| Error::Tool(format!("正则表达式不合法: {e}")))?;
-        let base = PathBuf::from(args.path.unwrap_or_else(|| ".".into()));
+        let base = resolve_path(base_dir, args.path.as_deref().unwrap_or("."));
         let glob_pat = args
             .glob
             .as_deref()
@@ -277,7 +279,7 @@ mod tests {
             .execute(serde_json::json!({
                 "pattern": "**/*.rs",
                 "path": dir.path().to_string_lossy(),
-            }))
+            }), dir.path())
             .await
             .unwrap();
         assert!(out.contains("a.rs"));
@@ -292,7 +294,7 @@ mod tests {
             .execute(serde_json::json!({
                 "pattern": "foo\\s+bar",
                 "path": dir.path().to_string_lossy(),
-            }))
+            }), dir.path())
             .await
             .unwrap();
         assert!(out.contains("x.txt:2: foo bar"));
@@ -308,7 +310,7 @@ mod tests {
             .execute(serde_json::json!({
                 "pattern": "needle",
                 "path": dir.path().to_string_lossy(),
-            }))
+            }), dir.path())
             .await
             .unwrap();
         assert!(out.contains("hit.txt"));

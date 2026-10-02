@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -55,6 +55,49 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// 判断请求 `Origin` 与请求 `Host` 是否同源。
+///
+/// 比较「主机名」而非完整 authority，并把回环地址（`localhost` / `127.0.0.1` / `::1`）
+/// 视为等价：反向代理（如 Vite dev proxy 的 `changeOrigin`）会把 `Host` 改写为目标地址，
+/// 而浏览器发送的 `Origin` 仍是页面地址，二者端口/主机写法可能不同但属同源。
+fn same_site(origin: &str, host: &str) -> bool {
+    let origin_host = origin
+        .split("://")
+        .nth(1)
+        .unwrap_or(origin)
+        .split('/')
+        .next()
+        .unwrap_or("");
+    if origin_host.is_empty() {
+        return false;
+    }
+    if origin_host.eq_ignore_ascii_case(host) {
+        return true;
+    }
+    let oh = host_name(origin_host);
+    let hh = host_name(host);
+    oh.eq_ignore_ascii_case(&hh) || (is_loopback(&oh) && is_loopback(&hh))
+}
+
+/// 取 authority 的主机名部分（剥离端口，兼容 `[::1]:port` 形式）。
+fn host_name(authority: &str) -> String {
+    let a = authority.trim();
+    if let Some(rest) = a.strip_prefix('[') {
+        if let Some((h, _)) = rest.split_once(']') {
+            return h.to_string();
+        }
+    }
+    match a.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => h.to_string(),
+        _ => a.to_string(),
+    }
+}
+
+/// 常见回环主机名。
+fn is_loopback(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
 pub async fn health(State(st): State<AppState>) -> Json<Value> {
     let agent = st.agent();
     Json(json!({
@@ -67,18 +110,23 @@ pub async fn health(State(st): State<AppState>) -> Json<Value> {
 
 /// 运行时信息（不含任何密钥）。
 pub async fn config_info(State(st): State<AppState>) -> Json<Value> {
-    let agent = st.agent();
-    Json(json!({
+    Json(runtime_json(&st.agent()))
+}
+
+/// Agent → 运行时信息 JSON（不含密钥）。
+fn runtime_json(agent: &Agent) -> Value {
+    json!({
         "provider": agent.provider().name(),
         "model": agent.provider().model(),
         "wire_api": agent.provider().wire_api(),
         "cwd": agent.cwd().display().to_string(),
+        "home": sen_core::paths::home_dir().display().to_string(),
         "skills": agent.skills().scan().iter().map(|s| json!({
             "name": s.name,
             "description": s.description,
             "group": s.group,
         })).collect::<Vec<_>>(),
-    }))
+    })
 }
 
 pub async fn list_sessions(State(st): State<AppState>) -> Result<Json<Vec<Session>>, ApiError> {
@@ -89,14 +137,22 @@ pub async fn list_sessions(State(st): State<AppState>) -> Result<Json<Vec<Sessio
 pub struct CreateSessionReq {
     #[serde(default)]
     pub title: Option<String>,
+    /// 所属项目目录（缺省 = 当前工作目录）。
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 pub async fn create_session(
     State(st): State<AppState>,
     body: Option<Json<CreateSessionReq>>,
 ) -> Result<Json<Session>, ApiError> {
-    let title = body.and_then(|b| b.0.title).unwrap_or_default();
-    Ok(Json(st.agent().store().create_session(&title)?))
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let title = req.title.unwrap_or_default();
+    let workspace = req
+        .workspace
+        .filter(|w| !w.trim().is_empty())
+        .unwrap_or_else(|| st.agent().cwd().display().to_string());
+    Ok(Json(st.agent().store().create_session(&title, Some(&workspace))?))
 }
 
 pub async fn get_session(
@@ -197,13 +253,14 @@ pub async fn put_settings(
     headers: HeaderMap,
     Json(draft): Json<DraftSettings>,
 ) -> Result<Json<Value>, ApiError> {
-    // 轻量 CSRF 防护：浏览器跨源请求会携带 Origin，其地址必须与请求 Host 一致。
+    // 轻量 CSRF 防护：浏览器跨源请求会携带 Origin，其主机必须与请求 Host 同源。
+    // 比较主机名且兼容回环地址，避免反向代理改写 Host 后误拒同源保存。
     if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
         let host = headers
             .get(header::HOST)
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default();
-        if !origin.ends_with(host) {
+        if !same_site(origin, host) {
             return Err(ApiError {
                 status: StatusCode::FORBIDDEN,
                 message: "Origin 校验失败（仅允许同源页面修改配置）".to_string(),
@@ -266,6 +323,8 @@ pub async fn put_settings(
         context_window: draft.context_window.clamp(1_024, 10_000_000),
         max_tool_rounds: draft.max_tool_rounds.clamp(1, 200),
         system_prompt: draft.system_prompt.filter(|s| !s.trim().is_empty()),
+        // 保留当前工作目录设置（由 /api/workspace 单独维护）
+        workspace: current.workspace.clone(),
     };
 
     // 先构建新 Agent 验证配置可解析（如 provider 存在、字段合法）；
@@ -277,6 +336,69 @@ pub async fn put_settings(
     st.replace_agent(new_agent);
 
     Ok(Json(settings_json(&new_config)))
+}
+
+/// 自动发现 provider 可用模型：`POST /api/models`。
+///
+/// 请求体 `{ name?, base_url, api_key?, wire_api? }`，用于设置页在保存前
+/// 探测模型列表；`api_key` 缺省/为空时，若同名 provider 已配置则回退使用其已存密钥。
+#[derive(Deserialize)]
+pub struct ListModelsReq {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub wire_api: Option<String>,
+}
+
+pub async fn list_models(
+    State(st): State<AppState>,
+    Json(req): Json<ListModelsReq>,
+) -> Result<Json<Value>, ApiError> {
+    let base_url = req.base_url.trim().to_string();
+    if base_url.is_empty() {
+        return Err(ApiError::bad_request("base_url 不能为空"));
+    }
+    let wire_api = match req.wire_api.as_deref().filter(|s| !s.is_empty()) {
+        Some(s) => WireApi::parse(s).map_err(|e| ApiError::bad_request(e.to_string()))?,
+        None => WireApi::Chat,
+    };
+    let name = req.name.clone().unwrap_or_default();
+    let saved = if name.is_empty() {
+        None
+    } else {
+        st.agent()
+            .config()
+            .providers
+            .iter()
+            .find(|p| p.name == name)
+            .cloned()
+    };
+    let api_key = req
+        .api_key
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| saved.as_ref().and_then(|p| p.api_key.clone()));
+    let cfg = ProviderConfig {
+        name: if name.is_empty() {
+            "discover".to_string()
+        } else {
+            name
+        },
+        base_url,
+        api_key,
+        model: String::new(),
+        wire_api,
+        headers: saved.map(|p| p.headers).unwrap_or_default(),
+        max_tokens: None,
+        temperature: None,
+    };
+    let models = sen_core::providers::list_models(&cfg)
+        .await
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    Ok(Json(json!({ "models": models })))
 }
 
 /// 配置 → 页面可编辑 JSON（密钥脱敏）。
@@ -309,4 +431,265 @@ fn settings_json(cfg: &Config) -> Value {
             })
             .collect::<Vec<_>>(),
     })
+}
+
+// ── 项目文件树（只读预览）────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct FileQuery {
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+/// 列出工作目录内某目录的直接子项（只读）：`GET /api/files/tree?path=<rel>`。
+///
+/// 返回 `[{ name, path, is_dir, size, modified_at }]`，`path` 相对工作目录、统一 `/`；
+/// 包含隐藏项（如 `.sen-agent`）；单目录条目上限 2000。
+pub async fn file_tree(
+    State(st): State<AppState>,
+    Query(q): Query<FileQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let cwd = st.agent().cwd().to_path_buf();
+    let rel = q.path.unwrap_or_default().trim_matches('/').to_string();
+    let dir = resolve_within(&cwd, &rel)?;
+    if !dir.is_dir() {
+        return Err(ApiError::bad_request("目标不是目录"));
+    }
+    let rd =
+        std::fs::read_dir(&dir).map_err(|e| ApiError::bad_request(format!("读取目录失败: {e}")))?;
+    let mut entries: Vec<Value> = Vec::new();
+    for ent in rd.flatten().take(2000) {
+        let Ok(ft) = ent.file_type() else { continue };
+        let name = ent.file_name().to_string_lossy().to_string();
+        let child = if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel}/{name}")
+        };
+        let md = ent.metadata().ok();
+        let modified_at = md
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        entries.push(json!({
+            "name": name,
+            "path": child,
+            "is_dir": ft.is_dir(),
+            "size": if ft.is_dir() { 0 } else { md.as_ref().map(|m| m.len()).unwrap_or(0) },
+            "modified_at": modified_at,
+        }));
+    }
+    // 目录在前，再按名称升序
+    entries.sort_by(|a, b| {
+        let ad = a["is_dir"].as_bool().unwrap_or(false);
+        let bd = b["is_dir"].as_bool().unwrap_or(false);
+        bd.cmp(&ad)
+            .then_with(|| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")))
+    });
+    Ok(Json(Value::Array(entries)))
+}
+
+/// 读取工作目录内文本文件（只读）：`GET /api/files/content?path=<rel>`。
+///
+/// 二进制文件、越界路径均返回 400；超过 ~200KB 的内容截断。
+pub async fn file_content(
+    State(st): State<AppState>,
+    Query(q): Query<FileQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let cwd = st.agent().cwd().to_path_buf();
+    let rel = q
+        .path
+        .map(|p| p.trim_matches('/').to_string())
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| ApiError::bad_request("缺少 path 参数"))?;
+    let file = resolve_within(&cwd, &rel)?;
+    if !file.is_file() {
+        return Err(ApiError::bad_request("目标不是文件"));
+    }
+    let bytes =
+        std::fs::read(&file).map_err(|e| ApiError::bad_request(format!("读取文件失败: {e}")))?;
+    let content =
+        String::from_utf8(bytes).map_err(|_| ApiError::bad_request("二进制文件不支持预览"))?;
+    Ok(Json(json!({
+        "path": rel,
+        "content": sen_core::util::truncate(&content, 200_000),
+    })))
+}
+
+/// 列出某会话的计划：`GET /api/sessions/{id}/plans`。
+pub async fn list_plans(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let plans = st.agent().store().list_plans(&id)?;
+    Ok(Json(json!(plans)))
+}
+
+// ── 工作目录（项目目录选择）───────────────────────────────────────────
+
+/// 浏览文件系统目录（用于选择项目目录）：`GET /api/fs/dirs?path=<abs>`。
+///
+/// `path` 缺省 = 用户主目录。返回 `{ path, parent, dirs: [{ name, path }] }`；
+/// 仅列出子目录（隐藏项跳过），`parent` 为上级目录绝对路径（根目录为 null）。
+pub async fn fs_dirs(Query(q): Query<FileQuery>) -> Result<Json<Value>, ApiError> {
+    let raw = q
+        .path
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| sen_core::paths::home_dir().display().to_string());
+    let dir = std::path::PathBuf::from(&raw);
+    if !dir.is_dir() {
+        return Err(ApiError::bad_request(format!("目录不存在: {raw}")));
+    }
+    let dir = dir.canonicalize().unwrap_or(dir);
+    let rd =
+        std::fs::read_dir(&dir).map_err(|e| ApiError::bad_request(format!("读取目录失败: {e}")))?;
+    let mut dirs: Vec<Value> = Vec::new();
+    for ent in rd.flatten().take(2000) {
+        let Ok(ft) = ent.file_type() else { continue };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = ent.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        dirs.push(json!({ "name": name, "path": ent.path().display().to_string() }));
+    }
+    dirs.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    let parent = dir.parent().map(|p| p.display().to_string());
+    Ok(Json(json!({
+        "path": dir.display().to_string(),
+        "parent": parent,
+        "dirs": dirs,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct SetWorkspaceReq {
+    pub path: String,
+}
+
+/// 切换项目工作目录并持久化：`PUT /api/workspace`。
+///
+/// 仅接受存在的绝对目录；成功后热替换 Agent 的 cwd（作用于文件树、文件读写与
+/// 命令执行），并写入 `config.workspace`，下次启动默认使用。
+pub async fn set_workspace(
+    State(st): State<AppState>,
+    Json(req): Json<SetWorkspaceReq>,
+) -> Result<Json<Value>, ApiError> {
+    let raw = req.path.trim();
+    if raw.is_empty() {
+        return Err(ApiError::bad_request("path 不能为空"));
+    }
+    let dir = std::path::PathBuf::from(raw);
+    if !dir.is_dir() {
+        return Err(ApiError::bad_request(format!("目录不存在: {raw}")));
+    }
+    let cwd = dir
+        .canonicalize()
+        .map_err(|e| ApiError::bad_request(format!("无法解析目录: {e}")))?;
+
+    let agent = st.agent();
+    // 持久化到配置（保留其余字段）
+    let mut cfg = agent.config().clone();
+    cfg.workspace = Some(cwd.display().to_string());
+    cfg.save()?;
+
+    st.replace_agent(agent.with_cwd(cwd));
+    Ok(Json(runtime_json(&st.agent())))
+}
+
+/// 切换某会话所属项目目录并联动当前工作目录：`PUT /api/sessions/{id}/workspace`。
+///
+/// 用于在已打开会话时切换项目：同步迁移会话归属（侧栏分组随之更新）、
+/// 热替换 Agent 的 cwd，并持久化到配置。
+#[derive(Deserialize)]
+pub struct SetSessionWorkspaceReq {
+    pub path: String,
+}
+
+pub async fn set_session_workspace(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetSessionWorkspaceReq>,
+) -> Result<Json<Value>, ApiError> {
+    let raw = req.path.trim();
+    if raw.is_empty() {
+        return Err(ApiError::bad_request("path 不能为空"));
+    }
+    let dir = std::path::PathBuf::from(raw);
+    if !dir.is_dir() {
+        return Err(ApiError::bad_request(format!("目录不存在: {raw}")));
+    }
+    let cwd = dir
+        .canonicalize()
+        .map_err(|e| ApiError::bad_request(format!("无法解析目录: {e}")))?;
+
+    let agent = st.agent();
+    let store = agent.store().clone();
+    store
+        .get_session(&id)?
+        .ok_or_else(|| ApiError::not_found(format!("会话不存在: {id}")))?;
+    store.set_session_workspace(&id, &cwd.display().to_string())?;
+
+    let mut cfg = agent.config().clone();
+    cfg.workspace = Some(cwd.display().to_string());
+    cfg.save()?;
+
+    st.replace_agent(agent.with_cwd(cwd));
+    Ok(Json(runtime_json(&st.agent())))
+}
+
+/// 解析相对工作目录的路径，并确保 canonical 后仍位于工作目录内（防目录穿越）。
+fn resolve_within(cwd: &std::path::Path, rel: &str) -> Result<std::path::PathBuf, ApiError> {
+    let base = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let joined = if rel.is_empty() {
+        base.clone()
+    } else {
+        base.join(rel)
+    };
+    let resolved = joined
+        .canonicalize()
+        .map_err(|e| ApiError::bad_request(format!("路径不存在或不可访问: {e}")))?;
+    if !resolved.starts_with(&base) {
+        return Err(ApiError::bad_request("路径越界（仅允许工作目录内）"));
+    }
+    Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{host_name, same_site};
+
+    #[test]
+    fn same_site_accepts_same_and_loopback() {
+        // 同 authority
+        assert!(same_site("http://127.0.0.1:8642", "127.0.0.1:8642"));
+        assert!(same_site("http://localhost:5173", "localhost:5173"));
+        // 反向代理改写 Host 为 127.0.0.1:8642，页面 Origin 为 localhost:5173 → 回环等价
+        assert!(same_site("http://localhost:5173", "127.0.0.1:8642"));
+        assert!(same_site("http://127.0.0.1:5173", "localhost:8642"));
+    }
+
+    #[test]
+    fn same_site_rejects_cross_origin() {
+        assert!(!same_site("http://evil.com", "127.0.0.1:8642"));
+        assert!(!same_site("http://evil.com:80", "localhost:8642"));
+        assert!(!same_site("null", "127.0.0.1:8642"));
+    }
+
+    #[test]
+    fn host_name_strips_port() {
+        assert_eq!(host_name("127.0.0.1:8642"), "127.0.0.1");
+        assert_eq!(host_name("localhost"), "localhost");
+        assert_eq!(host_name("[::1]:5173"), "::1");
+    }
 }

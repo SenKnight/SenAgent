@@ -13,7 +13,7 @@ use anyhow::Context;
 use axum::{
     http::{header, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post, put},
     Router,
 };
 use tower_http::cors::CorsLayer;
@@ -87,6 +87,7 @@ pub fn build_router_with_assets(
             "/api/settings",
             get(routes::get_settings).put(routes::put_settings),
         )
+        .route("/api/models", post(routes::list_models))
         .route(
             "/api/sessions",
             get(routes::list_sessions).post(routes::create_session),
@@ -97,6 +98,15 @@ pub fn build_router_with_assets(
                 .patch(routes::rename_session)
                 .delete(routes::delete_session),
         )
+        .route("/api/sessions/{id}/plans", get(routes::list_plans))
+        .route(
+            "/api/sessions/{id}/workspace",
+            put(routes::set_session_workspace),
+        )
+        .route("/api/files/tree", get(routes::file_tree))
+        .route("/api/files/content", get(routes::file_content))
+        .route("/api/fs/dirs", get(routes::fs_dirs))
+        .route("/api/workspace", put(routes::set_workspace))
         .route("/api/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);

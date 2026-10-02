@@ -21,10 +21,10 @@ pub mod skills;
 pub mod tools;
 pub mod util;
 
-pub use agent::Agent;
+pub use agent::{Agent, TurnMode};
 pub use config::{Config, ProviderConfig, WireApi};
 pub use error::{Error, Result};
 pub use events::{AgentEvent, Usage};
-pub use memory::{Message, Role, Session, Store, ToolCall};
+pub use memory::{Message, Plan, Role, Session, Store, ToolCall};
 pub use providers::{ChatRequest, Provider, StreamEvent, ToolSpec};
 pub use skills::{Skill, SkillManager};

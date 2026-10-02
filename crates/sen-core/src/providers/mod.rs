@@ -9,13 +9,14 @@ mod sse;
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ProviderConfig;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::memory::Message;
 
 pub use openai::OpenAiProvider;
@@ -84,4 +85,77 @@ pub trait Provider: Send + Sync {
 /// 根据配置构建 provider 实例。
 pub fn create_provider(cfg: &ProviderConfig) -> Result<Arc<dyn Provider>> {
     Ok(Arc::new(OpenAiProvider::new(cfg)?))
+}
+
+/// 自动发现 provider 可用模型列表（`GET {base_url}/models`）。
+///
+/// 兼容 OpenAI 兼容端点的 `{ "data": [{ "id": ... }] }`，
+/// 以及 Ollama 等返回的 `{ "models": [{ "name" | "id" | "model": ... }] }`，
+/// 也接受纯数组 `["a", "b"]`。仅只读查询，不产生副作用。
+pub async fn list_models(cfg: &ProviderConfig) -> Result<Vec<String>> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .build()
+        .map_err(Error::Http)?;
+    let base = cfg.base_url.trim_end_matches('/');
+    let mut rb = client.get(format!("{base}/models"));
+    if let Some(key) = cfg.resolved_api_key() {
+        rb = rb.bearer_auth(key);
+    }
+    for (k, v) in &cfg.headers {
+        rb = rb.header(k.as_str(), v.as_str());
+    }
+    let resp = rb.send().await.map_err(Error::Http)?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        let snippet: String = text.chars().take(300).collect();
+        return Err(Error::Provider(format!(
+            "HTTP {} from {base}/models: {snippet}",
+            status.as_u16()
+        )));
+    }
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| Error::Provider(format!("模型列表解析失败: {e}")))?;
+
+    let mut out: Vec<String> = Vec::new();
+    // OpenAI 兼容：{ "data": [ { "id": "..." } ] }
+    if let Some(arr) = v.get("data").and_then(|d| d.as_array()) {
+        for item in arr {
+            if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
+                out.push(id.to_string());
+            }
+        }
+    }
+    // Ollama 等：{ "models": [ { "name" | "id" | "model": "..." } ] }
+    if out.is_empty() {
+        if let Some(arr) = v.get("models").and_then(|d| d.as_array()) {
+            for item in arr {
+                let id = item
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .or_else(|| item.get("name").and_then(|x| x.as_str()))
+                    .or_else(|| item.get("model").and_then(|x| x.as_str()));
+                if let Some(id) = id {
+                    out.push(id.to_string());
+                }
+            }
+        }
+    }
+    // 纯数组：["a", "b"] 或 [{ "id": "a" }]
+    if out.is_empty() {
+        if let Some(arr) = v.as_array() {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    out.push(s.to_string());
+                } else if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
+                    out.push(id.to_string());
+                }
+            }
+        }
+    }
+
+    out.sort();
+    out.dedup();
+    Ok(out)
 }

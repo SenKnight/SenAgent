@@ -1,5 +1,6 @@
 //! web 工具：抓取网页并转为纯文本。
 
+use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -38,7 +39,7 @@ impl Tool for FetchTool {
         schema_of::<FetchArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, _base: &Path) -> Result<String> {
         let args: FetchArgs =
             serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
         if !args.url.starts_with("http://") && !args.url.starts_with("https://") {

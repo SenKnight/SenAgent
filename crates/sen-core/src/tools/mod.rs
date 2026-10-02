@@ -6,6 +6,7 @@
 pub mod builtin;
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -21,8 +22,19 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &'static str;
     /// 参数 JSON Schema（由 schemars 从入参结构体生成）
     fn parameters_schema(&self) -> Value;
-    /// 执行工具；Ok 返回观察结果文本，Err 的消息会作为错误反馈给模型。
-    async fn execute(&self, args: Value) -> Result<String>;
+    /// 执行工具；`base` 为当前工作目录（工具内的相对路径以此为根）。
+    /// Ok 返回观察结果文本，Err 的消息会作为错误反馈给模型。
+    async fn execute(&self, args: Value, base: &Path) -> Result<String>;
+}
+
+/// 将可能为相对路径的 `path` 解析到工作目录 `base` 下（绝对路径原样返回）。
+pub(crate) fn resolve_path(base: &Path, path: &str) -> PathBuf {
+    let p = Path::new(path);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        base.join(p)
+    }
 }
 
 /// 工具注册表。
@@ -64,8 +76,21 @@ impl ToolRegistry {
             .collect()
     }
 
-    /// 执行工具调用（name + JSON 字符串参数）。
-    pub async fn execute(&self, name: &str, arguments_json: &str) -> Result<String> {
+    /// 仅返回白名单内工具的定义（顺序按名称）。
+    pub fn specs_allowed(&self, allowed: &[&str]) -> Vec<ToolSpec> {
+        self.tools
+            .values()
+            .filter(|t| allowed.contains(&t.name()))
+            .map(|t| ToolSpec {
+                name: t.name().to_string(),
+                description: t.description().to_string(),
+                parameters: t.parameters_schema(),
+            })
+            .collect()
+    }
+
+    /// 执行工具调用（name + JSON 字符串参数 + 当前工作目录）。
+    pub async fn execute(&self, name: &str, arguments_json: &str, base: &Path) -> Result<String> {
         let tool = self
             .get(name)
             .ok_or_else(|| Error::Tool(format!("unknown tool: {name}")))?;
@@ -75,7 +100,7 @@ impl ToolRegistry {
             serde_json::from_str(arguments_json)
                 .map_err(|e| Error::Tool(format!("invalid tool arguments JSON: {e}")))?
         };
-        tool.execute(args).await
+        tool.execute(args, base).await
     }
 }
 

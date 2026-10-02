@@ -4,6 +4,7 @@
 //! 通过 channel 把用户输入送给异步主循环，主循环负责运行 Agent 并渲染事件流。
 
 use anyhow::{Context, Result};
+use sen_core::TurnMode;
 use tokio::sync::mpsc;
 
 use super::{build_agent, print_stream, resolve_session};
@@ -32,7 +33,7 @@ pub async fn run(provider: Option<String>, session: Option<String>) -> Result<()
             "/new" => {
                 session_id = agent
                     .store()
-                    .create_session("")
+                    .create_session("", None)
                     .context("创建会话失败")?
                     .id;
                 println!("已切换到新会话: {session_id}\n");
@@ -45,7 +46,7 @@ pub async fn run(provider: Option<String>, session: Option<String>) -> Result<()
             _ => {}
         }
         println!();
-        print_stream(agent.run_turn(&session_id, &line)).await;
+        print_stream(agent.run_turn(&session_id, &line, TurnMode::Normal)).await;
         println!();
     }
     println!("再见！");

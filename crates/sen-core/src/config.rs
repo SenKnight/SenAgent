@@ -96,6 +96,9 @@ pub struct Config {
     /// 追加到系统提示词的自定义内容
     #[serde(default)]
     pub system_prompt: Option<String>,
+    /// 项目工作目录（绝对路径）；为空时使用进程启动目录
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -118,6 +121,7 @@ impl Default for Config {
             context_window: default_context_window(),
             max_tool_rounds: default_max_tool_rounds(),
             system_prompt: None,
+            workspace: None,
         }
     }
 }

@@ -56,11 +56,9 @@ pub fn load_guidance(cwd: &Path) -> Vec<GuidanceFile> {
     out
 }
 
-/// 基线系统提示词（不含指导文件与技能索引）。
-pub fn base_system_prompt() -> String {
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| ".".into());
+/// 基线系统提示词（不含指导文件与技能索引）；`cwd` 为当前工作目录。
+pub fn base_system_prompt(cwd: &Path) -> String {
+    let cwd = cwd.display().to_string();
     format!(
         "你是 SenAgent，一个运行在用户本机上的个人 AI Agent。\n\n\
 ## 工作方式\n\
@@ -69,6 +67,8 @@ pub fn base_system_prompt() -> String {
 - 修改文件前先读取确认原文；修改后如有可用的构建或测试命令，主动运行验证。\n\
 - 工具报错时先分析原因再调整，不要盲目重复相同的调用。\n\
 - 默认使用中文回复（除非用户使用其他语言）。\n\n\
+## 产出物\n\
+- 需要产出文档、方案、报告等交付物时，写入相对当前目录的 `.sen-agent/artifacts/`（父目录会自动创建），便于用户在界面右侧文件树查看。\n\n\
 ## 环境\n\
 - 操作系统: {os}\n\
 - 当前目录: {cwd}",
@@ -82,8 +82,9 @@ pub fn assemble_system_prompt(
     extra: Option<&str>,
     guidance: &[GuidanceFile],
     skills_index: &str,
+    cwd: &Path,
 ) -> String {
-    let mut parts = vec![base_system_prompt()];
+    let mut parts = vec![base_system_prompt(cwd)];
     if let Some(e) = extra {
         if !e.trim().is_empty() {
             parts.push(e.trim().to_string());
@@ -119,7 +120,7 @@ mod tests {
             path: PathBuf::from("/tmp/AGENTS.md"),
             content: "必须使用中文回答".into(),
         };
-        let out = assemble_system_prompt(Some("附加指令"), &[g], "## 可用技能\n\n- `x`: demo");
+        let out = assemble_system_prompt(Some("附加指令"), &[g], "## 可用技能\n\n- `x`: demo", Path::new("."));
         assert!(out.contains("SenAgent"));
         assert!(out.contains("附加指令"));
         assert!(out.contains("必须使用中文回答"));
@@ -128,7 +129,7 @@ mod tests {
 
     #[test]
     fn assemble_without_optional_parts() {
-        let out = assemble_system_prompt(None, &[], "");
+        let out = assemble_system_prompt(None, &[], "", Path::new("."));
         assert!(out.contains("SenAgent"));
         assert!(!out.contains("指导文件"));
     }

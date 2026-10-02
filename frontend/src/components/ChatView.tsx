@@ -13,9 +13,11 @@ export function ChatView() {
   const running = useStore((s) => s.running);
   const wsConnected = useStore((s) => s.wsConnected);
   const currentSessionId = useStore((s) => s.currentSessionId);
+  const planMode = useStore((s) => s.planMode);
   const appendUser = useStore((s) => s.appendUser);
   const startAssistant = useStore((s) => s.startAssistant);
   const finishWithError = useStore((s) => s.finishWithError);
+  const setPlanMode = useStore((s) => s.setPlanMode);
   const setRunningState = useStore.setState;
   const newSession = useStore((s) => s.newSession);
 
@@ -51,7 +53,13 @@ export function ChatView() {
       startAssistant();
       setRunningState({ running: true });
       stickToBottom.current = true;
-      if (!sendWs({ type: "chat", session_id: sessionId, content: text })) {
+      const ok = sendWs({
+        type: "chat",
+        session_id: sessionId,
+        content: text,
+        mode: planMode ? "plan" : "normal",
+      });
+      if (!ok) {
         finishWithError("WebSocket 未连接，请稍候重试");
       }
     } catch (e) {
@@ -79,29 +87,50 @@ export function ChatView() {
         ))}
       </div>
 
-      <div className="border-t border-zinc-800 p-3 md:p-4">
-        <div className="max-w-3xl mx-auto flex items-end gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            rows={Math.min(6, input.split("\n").length)}
-            placeholder={
-              wsConnected
-                ? "输入消息，Enter 发送，Shift+Enter 换行"
-                : "等待与后端建立连接…"
-            }
-            disabled={running}
-            className="flex-1 resize-none rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm outline-none focus:border-zinc-500 disabled:opacity-60"
-          />
-          <button
-            type="button"
-            disabled={running || !input.trim()}
-            onClick={() => void send()}
-            className="rounded-xl bg-zinc-100 text-zinc-900 text-sm font-medium px-5 py-3 hover:bg-white disabled:opacity-40"
-          >
-            {running ? "生成中…" : "发送"}
-          </button>
+      <div className="border-t border-line p-3 md:p-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setPlanMode(!planMode)}
+              title="计划模式：Agent 先只读分析并给出计划，确认后再执行"
+              className={`text-xs rounded-full px-2.5 py-1 border ${
+                planMode
+                  ? "border-accent text-accent bg-accent/10"
+                  : "border-line text-ink-muted hover:text-ink"
+              }`}
+            >
+              {planMode ? "计划模式：开" : "计划模式：关"}
+            </button>
+            {planMode && (
+              <span className="text-xs text-ink-faint">
+                本轮仅只读分析，产出计划供确认后执行
+              </span>
+            )}
+          </div>
+          <div className="flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              rows={Math.min(6, input.split("\n").length)}
+              placeholder={
+                wsConnected
+                  ? "输入消息，Enter 发送，Shift+Enter 换行"
+                  : "等待与后端建立连接…"
+              }
+              disabled={running}
+              className="flex-1 resize-none rounded-xl border border-line-strong bg-elevated px-4 py-3 text-sm outline-none focus:border-ink-faint disabled:opacity-60"
+            />
+            <button
+              type="button"
+              disabled={running || !input.trim()}
+              onClick={() => void send()}
+              className="rounded-xl bg-primary text-primary-fg text-sm font-medium px-5 py-3 hover:bg-primary/90 disabled:opacity-40"
+            >
+              {running ? "生成中…" : "发送"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -113,7 +142,7 @@ function EmptyState() {
   return (
     <div className="max-w-3xl mx-auto pt-16 text-center">
       <div className="text-2xl font-semibold mb-2">SenAgent</div>
-      <div className="text-sm text-zinc-500 mb-8">
+      <div className="text-sm text-ink-muted mb-8">
         跨平台个人 AI Agent · 工具调用 · 技能系统 · 会话记忆
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
@@ -127,7 +156,7 @@ function EmptyState() {
         ))}
       </div>
       {info && (
-        <div className="mt-8 text-xs text-zinc-600">
+        <div className="mt-8 text-xs text-ink-faint">
           当前模型: {info.model}（{info.wire_api} 协议） · 工作目录: {info.cwd}
         </div>
       )}
@@ -152,7 +181,7 @@ function ExampleCard({ text }: { text: string }) {
     <button
       type="button"
       onClick={() => setInput(text)}
-      className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-300 text-left hover:border-zinc-600"
+      className="rounded-xl border border-line bg-elevated/60 px-4 py-3 text-sm text-ink text-left hover:border-line-strong"
     >
       {text}
     </button>
@@ -163,7 +192,7 @@ function MessageRow({ message }: { message: import("../types").UiMessage }) {
   if (message.role === "user") {
     return (
       <div className="max-w-3xl mx-auto flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-blue-600/90 text-white px-4 py-2.5 text-sm whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent/90 text-white px-4 py-2.5 text-sm whitespace-pre-wrap">
           {message.content}
         </div>
       </div>
@@ -176,10 +205,10 @@ function MessageRow({ message }: { message: import("../types").UiMessage }) {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="w-5 h-5 rounded-full bg-zinc-200 text-zinc-900 text-xs flex items-center justify-center font-bold">
+        <span className="w-5 h-5 rounded-full bg-primary text-primary-fg text-xs flex items-center justify-center font-bold">
           S
         </span>
-        <span className="text-xs text-zinc-500">SenAgent</span>
+        <span className="text-xs text-ink-muted">SenAgent</span>
         {message.streaming && (
           <span className="text-xs text-amber-400 animate-pulse">生成中…</span>
         )}
@@ -196,13 +225,13 @@ function MessageRow({ message }: { message: import("../types").UiMessage }) {
       )}
 
       {message.content && (
-        <div className="text-sm text-zinc-100">
+        <div className="text-sm text-ink">
           <Markdown content={message.content} />
         </div>
       )}
 
       {showStreamingDot && (
-        <span className="inline-block w-2 h-4 bg-zinc-400 animate-pulse align-middle" />
+        <span className="inline-block w-2 h-4 bg-ink-faint animate-pulse align-middle" />
       )}
 
       {message.error && (
@@ -212,7 +241,7 @@ function MessageRow({ message }: { message: import("../types").UiMessage }) {
       )}
 
       {message.usage && (
-        <div className="mt-2 text-xs text-zinc-600">
+        <div className="mt-2 text-xs text-ink-faint">
           用量: 输入 {message.usage.input_tokens} tokens / 输出{" "}
           {message.usage.output_tokens} tokens
         </div>
@@ -228,12 +257,12 @@ function ReasoningBlock({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs text-zinc-500 hover:text-zinc-300"
+        className="text-xs text-ink-muted hover:text-ink"
       >
         {open ? "收起推理过程" : "查看推理过程"}
       </button>
       {open && (
-        <pre className="mt-1 text-xs text-zinc-500 bg-zinc-900/60 border border-zinc-800 rounded-lg p-3 whitespace-pre-wrap max-h-64 overflow-y-auto">
+        <pre className="mt-1 text-xs text-ink-muted bg-elevated/60 border border-line rounded-lg p-3 whitespace-pre-wrap max-h-64 overflow-y-auto">
           {text}
         </pre>
       )}

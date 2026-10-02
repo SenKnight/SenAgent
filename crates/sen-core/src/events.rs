@@ -34,6 +34,8 @@ pub enum AgentEvent {
         output: String,
         is_error: bool,
     },
+    /// 计划模式下产出的计划（非终止事件，`Done` 前发出）
+    Plan { content: String },
     /// 本轮结束
     Done { usage: Option<Usage> },
     /// 发生错误，本轮终止

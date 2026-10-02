@@ -11,7 +11,8 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8642",
-        changeOrigin: true,
+        // 保持同源：不改写 Host（否则后端 Origin 校验会因 Host 变为目标地址而误拒）
+        changeOrigin: false,
         ws: true,
       },
     },

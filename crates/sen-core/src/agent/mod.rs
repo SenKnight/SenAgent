@@ -21,6 +21,23 @@ use crate::skills::SkillManager;
 use crate::tools::{builtin, ToolRegistry};
 use crate::util::{estimate_tokens, trim_messages};
 
+/// 一轮对话的模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnMode {
+    /// 常规：可读写文件、执行命令。
+    Normal,
+    /// 计划模式：只读分析，产出计划供用户确认后执行。
+    Plan,
+}
+
+/// 计划模式允许使用的只读工具白名单。
+const PLAN_MODE_TOOLS: &[&str] = &["read_file", "glob", "grep", "fetch", "load_skill"];
+
+/// 计划模式追加的系统提示词。
+const PLAN_MODE_PROMPT: &str = "# 计划模式\n现在处于计划模式：只做只读分析（可用 read_file / glob / grep / fetch / load_skill），\
+不要修改任何文件或执行命令。最后输出一份结构化 Markdown 计划，包含：目标、步骤、涉及文件、\
+风险与验证方式，供用户确认后执行。";
+
 /// Agent：一次构造，多次 `run_turn`。
 #[derive(Clone)]
 pub struct Agent {
@@ -78,6 +95,7 @@ impl Agent {
             self.config.system_prompt.as_deref(),
             &guidance,
             &skills_index,
+            &self.cwd,
         )
     }
 
@@ -106,19 +124,34 @@ impl Agent {
         &self.cwd
     }
 
+    /// 克隆出一个工作目录不同的 Agent（provider/store/skills 等部件共享）。
+    ///
+    /// 用于界面切换项目目录：新 cwd 作用于后续所有回合与文件树。
+    pub fn with_cwd(&self, cwd: PathBuf) -> Self {
+        let mut cloned = self.clone();
+        cloned.cwd = cwd;
+        cloned
+    }
+
     /// 执行一轮用户输入：返回事件流，内部完成多轮工具调用循环并持久化。
+    ///
+    /// `mode` 为 [`TurnMode::Plan`] 时进入计划模式：仅暴露只读工具、系统提示词
+    /// 追加计划指令，回合结束时若产出计划则持久化并发出 [`AgentEvent::Plan`]。
     ///
     /// 取消方式：丢弃（drop）返回的流即可中断，已产生的消息均已落库。
     pub fn run_turn(
         &self,
         session_id: &str,
         input: &str,
+        mode: TurnMode,
     ) -> impl futures_util::Stream<Item = AgentEvent> + Send + 'static {
         let agent = self.clone();
         let session_id = session_id.to_string();
         let input = input.to_string();
 
         stream! {
+            let plan_mode = matches!(mode, TurnMode::Plan);
+
             // 1. 持久化用户消息
             let user_msg = Message::user(&input);
             if let Err(e) = agent.store.append_message(&session_id, &user_msg) {
@@ -129,8 +162,12 @@ impl Agent {
                 tracing::warn!("设置会话标题失败: {e}");
             }
 
-            // 2. 系统提示词 + 历史消息
-            let system = agent.system_prompt();
+            // 2. 系统提示词 + 历史消息（计划模式追加只读计划指令）
+            let system = if plan_mode {
+                format!("{}\n\n{}", agent.system_prompt(), PLAN_MODE_PROMPT)
+            } else {
+                agent.system_prompt()
+            };
             let mut messages = match agent.store.load_messages(&session_id) {
                 Ok(m) => m,
                 Err(e) => {
@@ -139,7 +176,11 @@ impl Agent {
                 }
             };
 
-            let tool_specs = agent.tools.specs();
+            let tool_specs = if plan_mode {
+                agent.tools.specs_allowed(PLAN_MODE_TOOLS)
+            } else {
+                agent.tools.specs()
+            };
             let max_rounds = agent.config.max_tool_rounds.max(1);
             let mut total_usage = Usage::default();
 
@@ -227,6 +268,12 @@ impl Agent {
 
                 // 无工具调用：本轮结束
                 if calls.is_empty() {
+                    if plan_mode && !text.trim().is_empty() {
+                        if let Err(e) = agent.store.add_plan(&session_id, &text) {
+                            tracing::warn!("保存计划失败: {e}");
+                        }
+                        yield AgentEvent::Plan { content: text.clone() };
+                    }
                     yield AgentEvent::Done {
                         usage: if total_usage.total() > 0 { Some(total_usage) } else { None },
                     };
@@ -235,10 +282,22 @@ impl Agent {
 
                 // 执行工具并持久化结果（串行保序）
                 for call in &calls {
+                    // 计划模式仅允许只读工具，越权直接拒绝（双保险）
                     let (output, is_error) =
-                        match agent.tools.execute(&call.name, &call.arguments).await {
-                            Ok(out) => (out, false),
-                            Err(e) => (format!("Error: {e}"), true),
+                        if plan_mode && !PLAN_MODE_TOOLS.contains(&call.name.as_str()) {
+                            (
+                                format!("计划模式仅允许只读工具，已拒绝执行 `{}`", call.name),
+                                true,
+                            )
+                        } else {
+                            match agent
+                                .tools
+                                .execute(&call.name, &call.arguments, agent.cwd.as_path())
+                                .await
+                            {
+                                Ok(out) => (out, false),
+                                Err(e) => (format!("Error: {e}"), true),
+                            }
                         };
                     yield AgentEvent::ToolResult {
                         name: call.name.clone(),
@@ -277,11 +336,15 @@ mod tests {
     /// 脚本化 Mock Provider：每次 chat_stream 弹出一个小剧本。
     struct MockProvider {
         scripts: Mutex<VecDeque<Vec<StreamEvent>>>,
+        /// 最近一次请求提交给模型的工具名（用于校验计划模式白名单）。
+        last_tools: Mutex<Vec<String>>,
     }
 
     #[async_trait::async_trait]
     impl Provider for MockProvider {
-        async fn chat_stream(&self, _req: ChatRequest) -> Result<EventStream> {
+        async fn chat_stream(&self, req: ChatRequest) -> Result<EventStream> {
+            *self.last_tools.lock().unwrap() =
+                req.tools.iter().map(|t| t.name.clone()).collect();
             let events = self
                 .scripts
                 .lock()
@@ -325,7 +388,7 @@ mod tests {
             })
         }
 
-        async fn execute(&self, args: Value) -> Result<String> {
+        async fn execute(&self, args: Value, _base: &Path) -> Result<String> {
             Ok(format!(
                 "echo: {}",
                 args.get("text").and_then(|v| v.as_str()).unwrap_or("")
@@ -337,7 +400,7 @@ mod tests {
     async fn tool_loop_and_persistence() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("t.db")).unwrap();
-        let session = store.create_session("").unwrap();
+        let session = store.create_session("", None).unwrap();
 
         let provider = Arc::new(MockProvider {
             scripts: Mutex::new(VecDeque::from(vec![
@@ -361,6 +424,7 @@ mod tests {
                     StreamEvent::Done,
                 ],
             ])),
+            last_tools: Mutex::new(Vec::new()),
         });
 
         let mut registry = ToolRegistry::new();
@@ -376,7 +440,7 @@ mod tests {
             dir.path().to_path_buf(),
         );
 
-        let events: Vec<AgentEvent> = agent.run_turn(&session.id, "帮我 echo 一下").collect().await;
+        let events: Vec<AgentEvent> = agent.run_turn(&session.id, "帮我 echo 一下", TurnMode::Normal).collect().await;
 
         assert!(events
             .iter()
@@ -410,13 +474,14 @@ mod tests {
     async fn plain_reply_without_tools() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("t.db")).unwrap();
-        let session = store.create_session("").unwrap();
+        let session = store.create_session("", None).unwrap();
 
         let provider = Arc::new(MockProvider {
             scripts: Mutex::new(VecDeque::from(vec![vec![
                 StreamEvent::Token("你好！".into()),
                 StreamEvent::Done,
             ]])),
+            last_tools: Mutex::new(Vec::new()),
         });
 
         let agent = Agent::new(
@@ -428,7 +493,7 @@ mod tests {
             dir.path().to_path_buf(),
         );
 
-        let events: Vec<AgentEvent> = agent.run_turn(&session.id, "你好").collect().await;
+        let events: Vec<AgentEvent> = agent.run_turn(&session.id, "你好", TurnMode::Normal).collect().await;
         assert!(matches!(
             events.last().unwrap(),
             AgentEvent::Done { .. }
@@ -449,6 +514,7 @@ mod tests {
 
         let provider = Arc::new(MockProvider {
             scripts: Mutex::new(VecDeque::new()),
+            last_tools: Mutex::new(Vec::new()),
         });
         let agent = Agent::new(
             provider,
@@ -463,5 +529,77 @@ mod tests {
         assert!(sp.contains("SenAgent"));
         assert!(sp.contains("git-helper"));
         assert!(sp.contains("处理 git 操作"));
+    }
+
+    /// 名字固定的 Mock 工具（仅用于校验计划模式工具白名单）。
+    struct NamedTool(&'static str);
+
+    #[async_trait::async_trait]
+    impl Tool for NamedTool {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn description(&self) -> &'static str {
+            "mock"
+        }
+
+        fn parameters_schema(&self) -> Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn execute(&self, _args: Value, _base: &Path) -> Result<String> {
+            Ok("ok".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_mode_filters_tools_and_persists_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("t.db")).unwrap();
+        let session = store.create_session("", None).unwrap();
+
+        let provider = Arc::new(MockProvider {
+            scripts: Mutex::new(VecDeque::from(vec![vec![
+                StreamEvent::Token("## 计划\n1. 只读分析".into()),
+                StreamEvent::Done,
+            ]])),
+            last_tools: Mutex::new(Vec::new()),
+        });
+
+        let mut registry = ToolRegistry::new();
+        registry.register(NamedTool("read_file"));
+        registry.register(NamedTool("write_file"));
+        registry.register(NamedTool("edit_file"));
+        registry.register(NamedTool("shell"));
+
+        let agent = Agent::new(
+            provider.clone(),
+            registry,
+            store,
+            Arc::new(SkillManager::new(dir.path().join("skills"))),
+            Config::default(),
+            dir.path().to_path_buf(),
+        );
+
+        let events: Vec<AgentEvent> = agent
+            .run_turn(&session.id, "请制定方案", TurnMode::Plan)
+            .collect()
+            .await;
+
+        // 提交给模型的工具仅含只读白名单（不含写文件/命令执行）
+        let tools = provider.last_tools.lock().unwrap().clone();
+        assert!(tools.contains(&"read_file".to_string()));
+        assert!(!tools.contains(&"write_file".to_string()));
+        assert!(!tools.contains(&"edit_file".to_string()));
+        assert!(!tools.contains(&"shell".to_string()));
+
+        // 流末发出 Plan 事件，且计划已持久化
+        assert!(events.iter().any(|e| matches!(e, AgentEvent::Plan { .. })));
+        assert!(matches!(events.last().unwrap(), AgentEvent::Done { .. }));
+
+        let plans = agent.store.list_plans(&session.id).unwrap();
+        assert_eq!(plans.len(), 1);
+        assert!(plans[0].content.contains("计划"));
     }
 }

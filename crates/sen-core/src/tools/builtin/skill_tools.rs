@@ -1,5 +1,6 @@
 //! 技能工具：load_skill（按需加载技能全文）/ create_skill（创建新技能）。
 
+use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -41,7 +42,7 @@ impl Tool for LoadSkillTool {
         schema_of::<LoadArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, _base: &Path) -> Result<String> {
         let args: LoadArgs =
             serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
         let loaded = self
@@ -105,7 +106,7 @@ impl Tool for CreateSkillTool {
         schema_of::<CreateArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, _base: &Path) -> Result<String> {
         let args: CreateArgs =
             serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
         let file = self
@@ -136,13 +137,13 @@ mod tests {
                 "name": "git-helper",
                 "description": "处理 git 常用操作",
                 "content": "# git helper\n\n先运行 `git status`。\n",
-            }))
+            }), Path::new("."))
             .await
             .unwrap();
         assert!(out.contains("已创建技能"));
 
         let out = LoadSkillTool::new(skills)
-            .execute(serde_json::json!({ "name": "git-helper" }))
+            .execute(serde_json::json!({ "name": "git-helper" }), Path::new("."))
             .await
             .unwrap();
         assert!(out.contains("# 技能: git-helper"));
@@ -154,7 +155,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let skills = Arc::new(SkillManager::new(dir.path().join("skills")));
         let err = LoadSkillTool::new(skills)
-            .execute(serde_json::json!({ "name": "nope" }))
+            .execute(serde_json::json!({ "name": "nope" }), Path::new("."))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("不存在"));

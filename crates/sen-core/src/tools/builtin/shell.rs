@@ -1,5 +1,6 @@
 //! shell 工具：在本机执行命令。
 
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::tools::{schema_of, Tool};
+use crate::tools::{resolve_path, schema_of, Tool};
 use crate::util::truncate;
 
 pub struct ShellTool;
@@ -40,7 +41,7 @@ impl Tool for ShellTool {
         schema_of::<Args>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base: &Path) -> Result<String> {
         let args: Args = serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
 
         let mut cmd = if cfg!(windows) {
@@ -52,9 +53,12 @@ impl Tool for ShellTool {
             c.arg("-lc").arg(&args.command);
             c
         };
-        if let Some(cwd) = &args.cwd {
-            cmd.current_dir(cwd);
-        }
+        let cwd = args
+            .cwd
+            .as_deref()
+            .map(|c| resolve_path(base, c))
+            .unwrap_or_else(|| base.to_path_buf());
+        cmd.current_dir(cwd);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -1,5 +1,73 @@
 @import "tailwindcss";
 
+/* 语义色令牌：深色为默认，html.light 覆盖为浅色。
+   @theme inline 让生成的工具类（bg-panel / text-ink ...）绑定到运行时变量，
+   切换主题时无需重新构建即可生效。 */
+@theme inline {
+  --color-surface: var(--app-surface);
+  --color-panel: var(--app-panel);
+  --color-elevated: var(--app-elevated);
+  --color-hover: var(--app-hover);
+  --color-line: var(--app-line);
+  --color-line-strong: var(--app-line-strong);
+  --color-ink: var(--app-ink);
+  --color-ink-muted: var(--app-ink-muted);
+  --color-ink-faint: var(--app-ink-faint);
+  --color-primary: var(--app-primary);
+  --color-primary-fg: var(--app-primary-fg);
+  --color-accent: var(--app-accent);
+}
+
+:root {
+  /* 深色（默认，保持原有观感） */
+  --app-surface: #09090b;
+  --app-panel: #09090b;
+  --app-elevated: #18181b;
+  --app-hover: #27272a;
+  --app-line: #27272a;
+  --app-line-strong: #3f3f46;
+  --app-ink: #f4f4f5;
+  --app-ink-muted: #a1a1aa;
+  --app-ink-faint: #71717a;
+  --app-primary: #f4f4f5;
+  --app-primary-fg: #18181b;
+  --app-accent: #2563eb;
+
+  /* Markdown 专用 */
+  --md-code-bg: #27272a;
+  --md-code-fg: #e4e4e7;
+  --md-pre-bg: #18181b;
+  --md-border: #27272a;
+  --md-quote: #a1a1aa;
+  --md-link: #60a5fa;
+  --md-hr: #3f3f46;
+  --md-th-border: #3f3f46;
+}
+
+html.light {
+  --app-surface: #ffffff;
+  --app-panel: #fafafa;
+  --app-elevated: #f4f4f5;
+  --app-hover: #e4e4e7;
+  --app-line: #e4e4e7;
+  --app-line-strong: #d4d4d8;
+  --app-ink: #18181b;
+  --app-ink-muted: #52525b;
+  --app-ink-faint: #71717a;
+  --app-primary: #18181b;
+  --app-primary-fg: #fafafa;
+  --app-accent: #2563eb;
+
+  --md-code-bg: #f4f4f5;
+  --md-code-fg: #27272a;
+  --md-pre-bg: #f4f4f5;
+  --md-border: #e4e4e7;
+  --md-quote: #52525b;
+  --md-link: #2563eb;
+  --md-hr: #e4e4e7;
+  --md-th-border: #d4d4d8;
+}
+
 html,
 body,
 #root {
@@ -8,8 +76,8 @@ body,
 
 body {
   margin: 0;
-  background-color: #09090b;
-  color: #f4f4f5;
+  background-color: var(--app-surface);
+  color: var(--app-ink);
   font-family:
     system-ui,
     -apple-system,
@@ -27,11 +95,11 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--app-line-strong);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--app-ink-faint);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -83,26 +151,26 @@ body {
   margin: 0.2em 0;
 }
 .markdown a {
-  color: #60a5fa;
+  color: var(--md-link);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .markdown blockquote {
-  border-left: 3px solid #3f3f46;
+  border-left: 3px solid var(--md-border);
   margin: 0.6em 0;
   padding: 0.1em 0.9em;
-  color: #a1a1aa;
+  color: var(--md-quote);
 }
 .markdown code {
-  background: #27272a;
+  background: var(--md-code-bg);
   border-radius: 4px;
   padding: 0.12em 0.35em;
   font-size: 0.9em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .markdown pre {
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--md-pre-bg);
+  border: 1px solid var(--md-border);
   border-radius: 8px;
   padding: 0.8em 1em;
   overflow-x: auto;
@@ -121,18 +189,18 @@ body {
 }
 .markdown th,
 .markdown td {
-  border: 1px solid #3f3f46;
+  border: 1px solid var(--md-th-border);
   padding: 0.3em 0.7em;
 }
 .markdown hr {
   border: none;
-  border-top: 1px solid #3f3f46;
+  border-top: 1px solid var(--md-hr);
   margin: 1em 0;
 }
 
 /* 代码高亮（rehype-highlight 输出的 hljs 类） */
 .hljs {
-  color: #e4e4e7;
+  color: var(--md-code-fg);
 }
 .hljs-keyword,
 .hljs-selector-tag {
@@ -148,7 +216,7 @@ body {
 }
 .hljs-comment,
 .hljs-quote {
-  color: #71717a;
+  color: var(--app-ink-faint);
   font-style: italic;
 }
 .hljs-function,

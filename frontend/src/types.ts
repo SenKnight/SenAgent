@@ -3,6 +3,8 @@
 export interface Session {
   id: string;
   title: string;
+  /** 所属项目目录（绝对路径；无项目时为用户主目录） */
+  workspace: string;
   created_at: number;
   updated_at: number;
   message_count: number;
@@ -37,12 +39,14 @@ export type ServerEvent =
   | { type: "reasoning"; delta: string }
   | { type: "tool_call"; name: string; arguments: string }
   | { type: "tool_result"; name: string; output: string; is_error: boolean }
+  | { type: "plan"; content: string }
   | { type: "done"; usage?: Usage | null }
   | { type: "error"; message: string };
 
 /** 客户端 → 服务端的 WS 消息。 */
 export type ClientEvent =
-  | { type: "chat"; session_id: string; content: string }
+  | { type: "chat"; session_id: string; content: string; mode?: "normal" | "plan" }
+  | { type: "execute_plan"; session_id: string; plan_id: string }
   | { type: "ping" };
 
 export interface RuntimeInfo {
@@ -50,6 +54,8 @@ export interface RuntimeInfo {
   model: string;
   wire_api: string;
   cwd: string;
+  /** 用户主目录（用于「用户目录」分组标识） */
+  home: string;
   skills: { name: string; description: string; group: string }[];
 }
 
@@ -92,6 +98,33 @@ export interface DraftSettings {
   max_tool_rounds: number;
   system_prompt: string | null;
   providers: DraftProvider[];
+}
+
+/** 工作目录内的文件/目录项（文件树用）。 */
+export interface FileNode {
+  name: string;
+  /** 相对工作目录的路径，使用 `/` 分隔符 */
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified_at: number;
+}
+
+/** 目录浏览器：某绝对目录下的子目录列表（用于选择项目目录）。 */
+export interface DirListing {
+  path: string;
+  /** 上级目录绝对路径（根目录为 null） */
+  parent: string | null;
+  dirs: { name: string; path: string }[];
+}
+
+/** 计划模式下产出的计划。 */
+export interface Plan {
+  id: string;
+  session_id: string;
+  content: string;
+  status: "draft" | "executed";
+  created_at: number;
 }
 
 /** UI 层的工具调用状态。 */

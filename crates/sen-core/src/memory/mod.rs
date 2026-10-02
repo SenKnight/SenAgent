@@ -4,7 +4,7 @@ pub mod store;
 
 use serde::{Deserialize, Serialize};
 
-pub use store::{Session, Store};
+pub use store::{Plan, Session, Store};
 
 use crate::util::now_ms;
 

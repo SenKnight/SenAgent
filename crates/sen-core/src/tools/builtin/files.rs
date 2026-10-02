@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
+use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::tools::{schema_of, Tool};
+use crate::tools::{resolve_path, schema_of, Tool};
 use crate::util::truncate;
 
 pub struct ReadFileTool;
@@ -37,9 +38,10 @@ impl Tool for ReadFileTool {
         schema_of::<ReadArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base: &Path) -> Result<String> {
         let args: ReadArgs = serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
-        let content = tokio::fs::read_to_string(&args.path)
+        let path = resolve_path(base, &args.path);
+        let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| Error::Tool(format!("读取 {} 失败: {e}（二进制文件请用 shell 工具处理）", args.path)))?;
 
@@ -95,9 +97,9 @@ impl Tool for WriteFileTool {
         schema_of::<WriteArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base: &Path) -> Result<String> {
         let args: WriteArgs = serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
-        let path = std::path::Path::new(&args.path);
+        let path = resolve_path(base, &args.path);
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 tokio::fs::create_dir_all(parent)
@@ -105,7 +107,7 @@ impl Tool for WriteFileTool {
                     .map_err(|e| Error::Tool(format!("创建目录 {} 失败: {e}", parent.display())))?;
             }
         }
-        tokio::fs::write(path, &args.content)
+        tokio::fs::write(&path, &args.content)
             .await
             .map_err(|e| Error::Tool(format!("写入 {} 失败: {e}", args.path)))?;
         Ok(format!(
@@ -145,9 +147,10 @@ impl Tool for EditFileTool {
         schema_of::<EditArgs>()
     }
 
-    async fn execute(&self, args: Value) -> Result<String> {
+    async fn execute(&self, args: Value, base: &Path) -> Result<String> {
         let args: EditArgs = serde_json::from_value(args).map_err(|e| Error::Tool(format!("参数不合法: {e}")))?;
-        let content = tokio::fs::read_to_string(&args.path)
+        let path = resolve_path(base, &args.path);
+        let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| Error::Tool(format!("读取 {} 失败: {e}", args.path)))?;
 
@@ -171,9 +174,37 @@ impl Tool for EditFileTool {
         } else {
             content.replacen(&args.old_string, &args.new_string, 1)
         };
-        tokio::fs::write(&args.path, new_content)
+        tokio::fs::write(&path, new_content)
             .await
             .map_err(|e| Error::Tool(format!("写入 {} 失败: {e}", args.path)))?;
         Ok(format!("已编辑 {}（替换 {count} 处）", args.path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn resolves_relative_paths_against_base() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello base").unwrap();
+
+        // 相对路径应解析到 base（而非进程 cwd）
+        let out = ReadFileTool
+            .execute(serde_json::json!({ "path": "a.txt" }), dir.path())
+            .await
+            .unwrap();
+        assert!(out.contains("hello base"));
+
+        // 写入同样相对 base（父目录自动创建）
+        WriteFileTool
+            .execute(
+                serde_json::json!({ "path": "sub/b.txt", "content": "x" }),
+                dir.path(),
+            )
+            .await
+            .unwrap();
+        assert!(dir.path().join("sub/b.txt").exists());
     }
 }
