@@ -1,0 +1,64 @@
+name: pages
+
+# 将前端构建为静态站点并发布到 GitHub Pages（纯前端预览，不含后端服务）。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只保留一次 Pages 部署，新推送取消进行中的旧部署。
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 项目页访问在子路径下（/<仓库名>/），base 需与之匹配；从仓库名推导以兼容 fork。
+      - name: 解析子路径
+        run: echo "VITE_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+
+      - name: 构建前端
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          touch dist/.nojekyll
+
+      - uses: actions/configure-pages@v5
+        with:
+          # 若仓库尚未启用 Pages，则由 GITHUB_TOKEN 自动启用（首次部署 / fork 场景）
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

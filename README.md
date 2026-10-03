@@ -285,6 +285,16 @@ CI 构建时会先用 `node scripts/sync-version.mjs --check` 校验 tag 与源�
 
 手动触发（workflow_dispatch）只构建不发布，产物在该次运行的 **Actions → Artifacts** 中下载（需登录）。
 
+### 前端在线预览（GitHub Pages）
+
+`.github/workflows/pages.yml` 会在 `main` 分支改动 `frontend/**` 时自动构建前端并发布到 GitHub Pages（也可在 Actions 页手动 `workflow_dispatch` 触发）：
+
+- 构建时注入 `VITE_BASE=/${仓库名}/`（项目页子路径），产物输出 `frontend/dist` 并附带 `.nojekyll`；
+- 访问地址：`https://<用户或组织>.github.io/<仓库名>/`；
+- 首次使用需在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。
+
+> 说明：Pages 只托管静态前端，仓库本身不提供服务端，页面可正常渲染但会话 / 对话等 API 与 WebSocket 需要配套后端。如需连接独立后端，构建前设置 `VITE_API_BASE`（如 `https://api.example.com`）指向后端地址即可。
+
 ## License
 
 MIT

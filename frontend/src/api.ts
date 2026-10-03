@@ -11,8 +11,14 @@ import type {
   StoredMessage,
 } from "./types";
 
+/** 后端基地址：空串 = 同源（dev 走 Vite proxy，生产由后端托管）。
+ *  GitHub Pages 等纯静态部署可用构建期变量 VITE_API_BASE 指向独立后端。 */
+const API_BASE = (
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? ""
+).replace(/\/+$/, "");
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -109,6 +115,7 @@ export const saveSettings = (settings: DraftSettings) =>
   });
 
 export function wsUrl(): string {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/ws`;
+  const target = API_BASE ? new URL(API_BASE, location.href) : location;
+  const proto = target.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${target.host}/api/ws`;
 }
