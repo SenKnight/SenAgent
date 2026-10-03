@@ -1,37 +1,44 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
-/* 语义色令牌：深色为默认，html.light 覆盖为浅色。
-   @theme inline 让生成的工具类（bg-panel / text-ink ...）绑定到运行时变量，
-   切换主题时无需重新构建即可生效。 */
+/* 设计令牌：采用 pi-web 变量命名（--bg / --text / --accent …）作为规范。
+   @theme inline 把 Tailwind 工具类别名绑定到运行时变量，
+   因此切换主题（html.light）无需重新构建即可生效。
+   别名保留原有类名（bg-panel / text-ink / border-line …），避免全量改写 className。 */
 @theme inline {
-  --color-surface: var(--app-surface);
-  --color-panel: var(--app-panel);
-  --color-elevated: var(--app-elevated);
-  --color-hover: var(--app-hover);
-  --color-line: var(--app-line);
-  --color-line-strong: var(--app-line-strong);
-  --color-ink: var(--app-ink);
-  --color-ink-muted: var(--app-ink-muted);
-  --color-ink-faint: var(--app-ink-faint);
-  --color-primary: var(--app-primary);
-  --color-primary-fg: var(--app-primary-fg);
-  --color-accent: var(--app-accent);
+  --color-surface: var(--bg);
+  --color-panel: var(--bg-panel);
+  --color-elevated: var(--bg-elevated);
+  --color-hover: var(--bg-hover);
+  --color-selected: var(--bg-selected);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-faint: var(--text-dim);
+  --color-primary: var(--text);
+  --color-primary-fg: var(--bg-elevated);
+  --color-accent: var(--accent);
+  --color-user: var(--user-bg);
+  --color-tool: var(--tool-bg);
 }
 
 :root {
-  /* 深色（默认，保持原有观感） */
-  --app-surface: #09090b;
-  --app-panel: #09090b;
-  --app-elevated: #18181b;
-  --app-hover: #27272a;
-  --app-line: #27272a;
-  --app-line-strong: #3f3f46;
-  --app-ink: #f4f4f5;
-  --app-ink-muted: #a1a1aa;
-  --app-ink-faint: #71717a;
-  --app-primary: #f4f4f5;
-  --app-primary-fg: #18181b;
-  --app-accent: #2563eb;
+  /* 深色（默认） */
+  --bg: #09090b;
+  --bg-panel: #09090b;
+  --bg-elevated: #18181b;
+  --bg-hover: #27272a;
+  --bg-selected: #27272a;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --text: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+  --accent: #2563eb;
+  --user-bg: #1d4ed8;
+  --tool-bg: #18181b;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Markdown 专用 */
   --md-code-bg: #27272a;
@@ -45,18 +52,19 @@
 }
 
 html.light {
-  --app-surface: #ffffff;
-  --app-panel: #fafafa;
-  --app-elevated: #f4f4f5;
-  --app-hover: #e4e4e7;
-  --app-line: #e4e4e7;
-  --app-line-strong: #d4d4d8;
-  --app-ink: #18181b;
-  --app-ink-muted: #52525b;
-  --app-ink-faint: #71717a;
-  --app-primary: #18181b;
-  --app-primary-fg: #fafafa;
-  --app-accent: #2563eb;
+  --bg: #ffffff;
+  --bg-panel: #fafafa;
+  --bg-elevated: #f4f4f5;
+  --bg-hover: #e4e4e7;
+  --bg-selected: #e4e4e7;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-muted: #52525b;
+  --text-dim: #71717a;
+  --accent: #2563eb;
+  --user-bg: #2563eb;
+  --tool-bg: #f4f4f5;
 
   --md-code-bg: #f4f4f5;
   --md-code-fg: #27272a;
@@ -76,8 +84,8 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--app-surface);
-  color: var(--app-ink);
+  background-color: var(--bg);
+  color: var(--text);
   font-family:
     system-ui,
     -apple-system,
@@ -89,17 +97,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.font-mono {
+  font-family: var(--font-mono);
+}
+
 /* 细滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--app-line-strong);
+  background: var(--border-strong);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--app-ink-faint);
+  background: var(--text-dim);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -144,11 +156,19 @@ body {
 .markdown ul {
   list-style: disc;
 }
+.markdown ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
 .markdown ol {
   list-style: decimal;
 }
 .markdown li {
   margin: 0.2em 0;
+}
+.markdown input[type="checkbox"] {
+  margin-right: 0.4em;
+  vertical-align: middle;
 }
 .markdown a {
   color: var(--md-link);
@@ -166,7 +186,7 @@ body {
   border-radius: 4px;
   padding: 0.12em 0.35em;
   font-size: 0.9em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .markdown pre {
   background: var(--md-pre-bg);
@@ -197,6 +217,44 @@ body {
   border-top: 1px solid var(--md-hr);
   margin: 1em 0;
 }
+/* 数学公式过长时可横向滚动 */
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+
+/* 代码块容器：语言标签 + 复制按钮 */
+.code-block {
+  position: relative;
+}
+.code-block > .code-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  background: var(--md-pre-bg);
+  border: 1px solid var(--md-border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+.code-block > .code-block-bar + pre {
+  margin-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+.code-copy {
+  color: var(--text-dim);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-size: 0.68rem;
+}
+.code-copy:hover {
+  color: var(--text);
+}
 
 /* 代码高亮（rehype-highlight 输出的 hljs 类） */
 .hljs {
@@ -216,7 +274,7 @@ body {
 }
 .hljs-comment,
 .hljs-quote {
-  color: var(--app-ink-faint);
+  color: var(--text-dim);
   font-style: italic;
 }
 .hljs-function,

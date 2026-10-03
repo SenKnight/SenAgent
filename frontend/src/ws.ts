@@ -69,3 +69,10 @@ export function closeWs(): void {
   socket?.close();
   socket = null;
 }
+
+/** 关闭并立即重连：后端无 cancel 消息，据此取消当前生成轮次。 */
+export function reconnectWs(): void {
+  closeWs();
+  retry = 0;
+  connectWs();
+}

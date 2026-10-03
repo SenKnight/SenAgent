@@ -22,6 +22,7 @@ export const MOCK = import.meta.env.VITE_MOCK === "1";
 
 const DEMO_HOME = "/home/demo";
 const DEMO_WORKSPACE = "/home/demo/projects/senagent-demo";
+const DEMO_WORKSPACE_2 = "/home/demo/projects/pi-web-demo";
 const DEMO_MODEL = "deepseek-chat";
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -42,7 +43,7 @@ let sessions: Session[] = [
   {
     id: "demo-readme",
     title: "整理 README 文档",
-    workspace,
+    workspace: DEMO_WORKSPACE_2,
     created_at: nowSec() - 7200,
     updated_at: nowSec() - 7000,
     message_count: 2,
@@ -213,6 +214,10 @@ const FILE_TREE: Record<string, FileNode[]> = {
 const FILE_CONTENT: Record<string, string> = {
   "README.md":
     "# SenAgent（演示）\n\n跨平台个人 AI Agent：CLI / Web / 桌面三端同核，Rust 全栈。\n\n- **sen-core**：Agent 主循环、Provider 双协议、工具系统、技能\n- **sen-server**：axum 服务，WebSocket + REST + 前端托管\n- **frontend**：React 19 + TS + Vite + Tailwind 4 + Zustand\n\n> 当前为 GitHub Pages 静态预览，数据均为演示内容。\n",
+  "Cargo.toml":
+    "[workspace]\nmembers = [\n  \"crates/sen-core\",\n  \"crates/sen-server\",\n  \"crates/sen-cli\",\n]\nresolver = \"2\"\n\n[workspace.package]\nversion = \"0.1.5\"\nedition = \"2021\"\n",
+  "src/main.rs":
+    "fn main() {\n    let cwd = std::env::current_dir().unwrap();\n    println!(\"SenAgent demo in {}\", cwd.display());\n}\n",
   "src/pay.rs":
     "pub struct Order {\n    pub id: String,\n    pub amount_cents: i64,\n}\n\n// 演示：拆分后的下单流程\npub fn create_order(id: &str, amount_cents: i64) -> Order {\n    validate(id, amount_cents);\n    Order { id: id.to_string(), amount_cents }\n}\n\nfn validate(id: &str, amount_cents: i64) {\n    assert!(!id.is_empty(), \"id required\");\n    assert!(amount_cents > 0, \"amount must be positive\");\n}\n",
   "frontend/package.json":
@@ -225,11 +230,15 @@ const DIR_TREE: Record<string, string[]> = {
   "/": ["/home"],
   "/home": ["/home/demo"],
   "/home/demo": ["/home/demo/projects", "/home/demo/Documents"],
-  "/home/demo/projects": ["/home/demo/projects/senagent-demo"],
+  "/home/demo/projects": [
+    "/home/demo/projects/senagent-demo",
+    "/home/demo/projects/pi-web-demo",
+  ],
   "/home/demo/projects/senagent-demo": [
     "/home/demo/projects/senagent-demo/src",
     "/home/demo/projects/senagent-demo/frontend",
   ],
+  "/home/demo/projects/pi-web-demo": ["/home/demo/projects/pi-web-demo/src"],
 };
 
 function dirListing(rawPath: string): DirListing {

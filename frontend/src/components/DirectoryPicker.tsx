@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 
 import { listDirs } from "../api";
+import { useI18n } from "../hooks/useI18n";
 import { useStore } from "../store";
 import type { DirListing } from "../types";
 
 export function DirectoryPicker() {
+  const { t } = useI18n();
   const info = useStore((s) => s.info);
   const changeWorkspace = useStore((s) => s.changeWorkspace);
   const setDirPickerOpen = useStore((s) => s.setDirPickerOpen);
@@ -73,13 +75,13 @@ export function DirectoryPicker() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-3 border-b border-line flex items-center justify-between">
-          <div className="text-sm font-medium">选择项目目录</div>
+          <div className="text-sm font-medium">{t("dir.title")}</div>
           <button
             type="button"
             onClick={() => setDirPickerOpen(false)}
             className="text-ink-muted hover:text-ink text-sm"
           >
-            关闭
+            {t("common.close")}
           </button>
         </div>
 
@@ -114,15 +116,19 @@ export function DirectoryPicker() {
               onClick={() => void load(listing.parent!)}
               className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-hover text-ink-muted"
             >
-              ↑ 上一级
+              {t("dir.parent")}
             </button>
           )}
-          {error && <div className="text-xs text-red-400 px-2 py-1 break-all">{error}</div>}
+          {error && (
+            <div className="text-xs text-red-400 px-2 py-1 break-all">{error}</div>
+          )}
           {loading && !listing && (
-            <div className="text-xs text-ink-faint px-2 py-1">加载中…</div>
+            <div className="text-xs text-ink-faint px-2 py-1">
+              {t("dir.loading")}
+            </div>
           )}
           {listing && listing.dirs.length === 0 && (
-            <div className="text-xs text-ink-faint px-2 py-1">（无子目录）</div>
+            <div className="text-xs text-ink-faint px-2 py-1">{t("dir.none")}</div>
           )}
           {listing?.dirs.map((d) => (
             <button
@@ -139,14 +145,14 @@ export function DirectoryPicker() {
 
         <div className="p-3 border-t border-line flex items-center gap-3">
           <div className="flex-1 text-xs text-ink-muted font-mono break-all">
-            当前: {listing?.path ?? "…"}
+            {t("dir.current", { path: listing?.path ?? "…" })}
           </div>
           <button
             type="button"
             onClick={() => setDirPickerOpen(false)}
             className="text-xs px-3 py-1.5 rounded border border-line text-ink-muted hover:text-ink"
           >
-            取消
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -154,7 +160,7 @@ export function DirectoryPicker() {
             onClick={() => void apply()}
             className="text-xs px-3 py-1.5 rounded bg-primary text-primary-fg hover:opacity-90 disabled:opacity-50"
           >
-            {applying ? "应用中…" : "选择此目录"}
+            {applying ? t("dir.applying") : t("dir.select")}
           </button>
         </div>
       </div>

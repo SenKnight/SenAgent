@@ -1,21 +1,19 @@
-/** 设置页（整页视图，非弹窗）：左侧页签（通用 / 模型服务 / 技能 / 身份），整体三栏居中。
+/** 设置面板：左侧分节导航（通用 / 模型服务 / 技能 / 身份），三栏布局。
  *
- * - 左栏：页签导航；「模型服务」下按 provider 切换（不全部铺开）
- * - 中栏：选中页签的内容（通用设置 / Provider 表单 / 技能列表 / 身份提示词）
- * - 右栏：保存按钮 + 状态展示
- *
- * 「模型服务」支持**自动发现模型**（探测 provider 的 OpenAI 兼容 `/models`），
- * 并通过下拉选项在多个模型间切换，避免手动填写模型名。
- *
- * 与对话视图通过侧栏底部「设置」/ 顶部「返回对话」灵活切换；
- * 三栏整体居中，右侧不占满，保留右侧产出物面板可切换。
+ * 由现 `SettingsView.tsx` 重构：改为面板式（覆盖主区），文案接入 i18n，保留
+ * 模型自动发现与「保存并生效」流程。
  */
 
 import { useEffect, useState } from "react";
 
 import { getRuntimeInfo, getSettings, listModels, saveSettings } from "../api";
+import { useI18n } from "../hooks/useI18n";
 import { useStore } from "../store";
-import type { DraftSettings, EditableSettings } from "../types";
+import type {
+  DraftSettings,
+  EditableSettings,
+  RuntimeInfo,
+} from "../types";
 
 /** 表单内 Provider 草稿：区分服务端回显与用户新输入。 */
 interface ProviderDraft {
@@ -31,7 +29,7 @@ interface ProviderDraft {
   temperature: number | null;
 }
 
-/** 左侧页签选择态。 */
+/** 左侧分节选择态。 */
 type Sel =
   | { kind: "general" }
   | { kind: "provider"; index: number }
@@ -55,11 +53,12 @@ const inputCls =
   "w-full bg-elevated border border-line rounded-md px-2 py-1.5 text-xs " +
   "text-ink placeholder:text-ink-faint focus:outline-none focus:border-line-strong";
 
-export function SettingsView() {
+export function SettingsPanel() {
+  const { t } = useI18n();
   const info = useStore((s) => s.info);
   const wsConnected = useStore((s) => s.wsConnected);
   const serverModel = useStore((s) => s.serverModel);
-  const setView = useStore((s) => s.setView);
+  const closeSettings = useStore((s) => s.closeSettings);
 
   const [loaded, setLoaded] = useState<EditableSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,7 +68,10 @@ export function SettingsView() {
   const [maxToolRounds, setMaxToolRounds] = useState(25);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [saveMsg, setSaveMsg] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
   const [sel, setSel] = useState<Sel>({ kind: "general" });
 
   // 模型自动发现结果（针对当前选中的 provider）
@@ -131,7 +133,8 @@ export function SettingsView() {
     setDrafts((ds) => ds.filter((_, i) => i !== idx));
     setSel((cur) => {
       if (cur.kind !== "provider") return cur;
-      if (cur.index === idx) return { kind: "provider", index: Math.max(0, idx - 1) };
+      if (cur.index === idx)
+        return { kind: "provider", index: Math.max(0, idx - 1) };
       if (cur.index > idx) return { kind: "provider", index: cur.index - 1 };
       return cur;
     });
@@ -141,7 +144,7 @@ export function SettingsView() {
   const discoverModels = async (idx: number) => {
     const d = drafts[idx];
     if (!d || !d.base_url.trim()) {
-      setModelsError("请先填写 Base URL");
+      setModelsError(t("settings.baseUrlFirst"));
       return;
     }
     setModelsLoading(true);
@@ -154,7 +157,7 @@ export function SettingsView() {
         wire_api: d.wire_api,
       });
       setModelOptions(res.models);
-      if (res.models.length === 0) setModelsError("未发现任何模型");
+      if (res.models.length === 0) setModelsError(t("settings.notDiscovered"));
     } catch (e) {
       setModelOptions([]);
       setModelsError(e instanceof Error ? e.message : String(e));
@@ -177,20 +180,26 @@ export function SettingsView() {
   const save = async () => {
     for (const d of drafts) {
       if (!d.name.trim()) {
-        setSaveMsg({ kind: "err", text: "provider 名称不能为空" });
+        setSaveMsg({ kind: "err", text: t("settings.errProviderName") });
         return;
       }
       if (!d.base_url.trim()) {
-        setSaveMsg({ kind: "err", text: `「${d.name}」的 Base URL 不能为空` });
+        setSaveMsg({
+          kind: "err",
+          text: t("settings.errBaseUrl", { name: d.name }),
+        });
         return;
       }
       if (!d.model.trim()) {
-        setSaveMsg({ kind: "err", text: `「${d.name}」的模型不能为空` });
+        setSaveMsg({
+          kind: "err",
+          text: t("settings.errModel", { name: d.name }),
+        });
         return;
       }
     }
     if (!drafts.some((d) => d.name.trim() === defaultProvider)) {
-      setSaveMsg({ kind: "err", text: "默认 Provider 不在列表中" });
+      setSaveMsg({ kind: "err", text: t("settings.errDefaultNotInList") });
       return;
     }
 
@@ -205,7 +214,9 @@ export function SettingsView() {
         model: d.model.trim(),
         wire_api: d.wire_api,
         // 仅当用户输入了新值时携带；不携带 = 服务端保留已存密钥
-        ...(d.apiKeyInput.trim() !== "" ? { api_key: d.apiKeyInput.trim() } : {}),
+        ...(d.apiKeyInput.trim() !== ""
+          ? { api_key: d.apiKeyInput.trim() }
+          : {}),
         max_tokens: d.max_tokens,
         temperature: d.temperature,
       })),
@@ -217,9 +228,12 @@ export function SettingsView() {
       const saved = await saveSettings(payload);
       applySettings(saved);
       await refreshRuntime();
-      setSaveMsg({ kind: "ok", text: "已保存并生效，下一条消息即使用新配置" });
+      setSaveMsg({ kind: "ok", text: t("settings.saved") });
     } catch (e) {
-      setSaveMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+      setSaveMsg({
+        kind: "err",
+        text: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setSaving(false);
     }
@@ -231,43 +245,53 @@ export function SettingsView() {
     <div className="flex-1 flex flex-col min-h-0">
       {/* 子标题栏 */}
       <div className="h-11 shrink-0 border-b border-line flex items-center gap-3 px-4">
-        <div className="text-sm font-medium">设置</div>
-        <span className="text-xs text-ink-muted">统一配置 · 保存后立即生效</span>
+        <div className="text-sm font-medium">{t("settings.title")}</div>
+        <span className="text-xs text-ink-muted">{t("settings.subtitle")}</span>
         <span className="flex-1" />
         <button
           type="button"
-          onClick={() => setView("chat")}
+          onClick={closeSettings}
           className="text-xs text-ink-muted hover:text-ink border border-line rounded-md px-2.5 py-1"
         >
-          返回对话
+          {t("settings.backToChat")}
         </button>
       </div>
 
-      {/* 三栏居中：不占满，右侧保留产出物面板 */}
+      {/* 三栏居中 */}
       <div className="flex-1 flex min-h-0 justify-center">
         <div className="w-full max-w-6xl flex min-h-0">
-          {/* 左栏：页签导航 */}
+          {/* 左栏：分节导航 */}
           <nav className="w-56 shrink-0 border-r border-line overflow-y-auto py-2 text-xs">
             <div className="px-3 pb-1 text-[10px] uppercase tracking-wide text-ink-faint">
-              设置项
+              {t("settings.section")}
             </div>
             <NavItem
               active={sel.kind === "general"}
-              label="通用"
+              label={t("settings.general")}
               onClick={() => setSel({ kind: "general" })}
             />
 
             <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-ink-faint">
-              模型服务
+              {t("settings.models")}
             </div>
-            {loadError && <div className="px-3 py-1 text-red-400 break-all">{loadError}</div>}
-            {!loaded && !loadError && <div className="px-3 py-1 text-ink-faint">加载中…</div>}
+            {loadError && (
+              <div className="px-3 py-1 text-red-400 break-all">{loadError}</div>
+            )}
+            {!loaded && !loadError && (
+              <div className="px-3 py-1 text-ink-faint">
+                {t("settings.loading")}
+              </div>
+            )}
             {drafts.map((d, i) => (
               <NavItem
                 key={i}
                 active={sel.kind === "provider" && sel.index === i}
-                label={d.name.trim() || "(未命名)"}
-                badge={d.name.trim() === defaultProvider ? "默认" : undefined}
+                label={d.name.trim() || t("settings.unnamed")}
+                badge={
+                  d.name.trim() === defaultProvider
+                    ? t("settings.defaultBadge")
+                    : undefined
+                }
                 onClick={() => setSel({ kind: "provider", index: i })}
               />
             ))}
@@ -276,30 +300,32 @@ export function SettingsView() {
               onClick={addProvider}
               className="w-full text-left px-3 py-1.5 text-ink-muted hover:text-ink"
             >
-              + 添加 Provider
+              {t("settings.addProvider")}
             </button>
 
             <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-ink-faint">
-              其他
+              {t("settings.other")}
             </div>
             <NavItem
               active={sel.kind === "skills"}
-              label={`技能（${info?.skills.length ?? 0}）`}
+              label={t("settings.skillsHeader", { n: info?.skills.length ?? 0 })}
               onClick={() => setSel({ kind: "skills" })}
             />
             <NavItem
               active={sel.kind === "identity"}
-              label="身份"
+              label={t("settings.identity")}
               onClick={() => setSel({ kind: "identity" })}
             />
           </nav>
 
-          {/* 中栏：选中页签内容 */}
+          {/* 中栏：选中分节内容 */}
           <div className="flex-1 min-w-0 overflow-y-auto p-5 text-sm space-y-7">
             {loadError ? (
-              <div className="text-xs text-red-400 break-all">加载配置失败: {loadError}</div>
+              <div className="text-xs text-red-400 break-all">
+                {t("settings.loadFailed", { err: loadError })}
+              </div>
             ) : !loaded ? (
-              <div className="text-ink-muted text-xs">加载中…</div>
+              <div className="text-ink-muted text-xs">{t("settings.loading")}</div>
             ) : sel.kind === "general" ? (
               <GeneralForm
                 drafts={drafts}
@@ -327,7 +353,10 @@ export function SettingsView() {
             ) : sel.kind === "skills" ? (
               <SkillsList info={info} />
             ) : (
-              <IdentityForm systemPrompt={systemPrompt} setSystemPrompt={setSystemPrompt} />
+              <IdentityForm
+                systemPrompt={systemPrompt}
+                setSystemPrompt={setSystemPrompt}
+              />
             )}
           </div>
 
@@ -339,7 +368,7 @@ export function SettingsView() {
               disabled={saving || !loaded}
               className="w-full bg-primary text-primary-fg hover:opacity-90 disabled:opacity-50 text-xs font-medium rounded-md py-2"
             >
-              {saving ? "保存中…" : "保存并生效"}
+              {saving ? t("settings.saving") : t("settings.saveApply")}
             </button>
             {saveMsg && (
               <div
@@ -351,24 +380,36 @@ export function SettingsView() {
               </div>
             )}
             <p className="text-[11px] text-ink-faint leading-relaxed">
-              页面保存后立即生效，无需编辑文件或重启。指导提示词支持全局{" "}
-              <code className="text-ink-muted">~/.agents/AGENTS.md</code> 与项目级{" "}
-              <code className="text-ink-muted">AGENTS.md</code>。
+              {t("settings.saveHint")}
             </p>
 
             <div className="border-t border-line pt-4 space-y-2 text-xs">
-              <div className="text-[10px] uppercase tracking-wide text-ink-faint">状态</div>
+              <div className="text-[10px] uppercase tracking-wide text-ink-faint">
+                {t("settings.status")}
+              </div>
               <StatusRow
                 dot={wsConnected ? "ok" : "err"}
-                label={wsConnected ? "已连接" : "未连接（自动重连中）"}
+                label={
+                  wsConnected ? t("top.connected") : t("top.reconnecting")
+                }
               />
-              <StatusRow label="当前模型" value={info?.model ?? serverModel ?? "—"} />
-              <StatusRow label="协议" value={info?.wire_api ?? "—"} />
-              <StatusRow label="工作目录" value={info?.cwd ?? "—"} mono />
+              <StatusRow
+                label={t("settings.currentModel")}
+                value={info?.model ?? serverModel ?? "—"}
+              />
+              <StatusRow
+                label={t("settings.protocol")}
+                value={info?.wire_api ?? "—"}
+              />
+              <StatusRow
+                label={t("settings.workspace")}
+                value={info?.cwd ?? "—"}
+                mono
+              />
             </div>
 
             <div className="border-t border-line pt-4 text-[11px] text-ink-muted leading-relaxed">
-              配置文件：
+              {t("settings.configFile")}
               <div className="font-mono break-all text-ink-faint">
                 {loaded?.config_path ?? "~/.sen-agent/config.toml"}
               </div>
@@ -428,11 +469,14 @@ function GeneralForm({
   maxToolRounds: number;
   setMaxToolRounds: (v: number) => void;
 }) {
+  const { t } = useI18n();
   return (
     <section className="max-w-2xl space-y-5">
-      <h2 className="text-sm font-medium">通用设置</h2>
+      <h2 className="text-sm font-medium">{t("settings.generalHeader")}</h2>
       <label className="block">
-        <div className="text-xs text-ink-muted mb-1">默认 Provider</div>
+        <div className="text-xs text-ink-muted mb-1">
+          {t("settings.defaultProvider")}
+        </div>
         <select
           value={defaultProvider}
           onChange={(e) => setDefaultProvider(e.target.value)}
@@ -440,14 +484,16 @@ function GeneralForm({
         >
           {drafts.map((d, i) => (
             <option key={i} value={d.name.trim()}>
-              {d.name.trim() || "(未命名)"}
+              {d.name.trim() || t("settings.unnamed")}
             </option>
           ))}
         </select>
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">上下文窗口（token）</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.contextWindow")}
+          </div>
           <input
             type="number"
             min={1024}
@@ -457,7 +503,9 @@ function GeneralForm({
           />
         </label>
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">工具轮数上限</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.maxToolRounds")}
+          </div>
           <input
             type="number"
             min={1}
@@ -496,11 +544,12 @@ function ProviderForm({
   onSetDefault: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const modelValue = models.includes(draft.model) ? draft.model : "";
   return (
     <section className="max-w-2xl space-y-5">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-medium">模型服务</h2>
+        <h2 className="text-sm font-medium">{t("settings.models")}</h2>
         <span className="flex-1" />
         <button
           type="button"
@@ -508,7 +557,7 @@ function ProviderForm({
           disabled={isDefault}
           className="text-xs text-accent hover:opacity-80 disabled:opacity-40 disabled:text-ink-muted"
         >
-          {isDefault ? "当前默认" : "设为默认"}
+          {isDefault ? t("settings.isDefault") : t("settings.setDefault")}
         </button>
         <button
           type="button"
@@ -516,21 +565,23 @@ function ProviderForm({
           disabled={!canDelete}
           className="text-xs text-ink-muted hover:text-red-400 disabled:opacity-30 disabled:hover:text-ink-muted"
         >
-          删除
+          {t("settings.delete")}
         </button>
       </div>
 
       <label className="block">
-        <div className="text-xs text-ink-muted mb-1">名称</div>
+        <div className="text-xs text-ink-muted mb-1">
+          {t("settings.providerName")}
+        </div>
         <input
           value={draft.name}
           onChange={(e) => onRename(e.target.value)}
-          placeholder="如 openai / deepseek / ollama"
+          placeholder={t("settings.providerNamePlaceholder")}
           className={inputCls}
         />
       </label>
       <label className="block">
-        <div className="text-xs text-ink-muted mb-1">Base URL</div>
+        <div className="text-xs text-ink-muted mb-1">{t("settings.baseUrl")}</div>
         <input
           value={draft.base_url}
           onChange={(e) => onPatch({ base_url: e.target.value })}
@@ -542,14 +593,14 @@ function ProviderForm({
       {/* 模型：自动发现 + 下拉切换（含手动填写） */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <div className="text-xs text-ink-muted">模型</div>
+          <div className="text-xs text-ink-muted">{t("settings.model")}</div>
           <button
             type="button"
             onClick={onDiscover}
             disabled={modelsLoading}
             className="text-[11px] text-accent hover:opacity-80 disabled:opacity-50"
           >
-            {modelsLoading ? "发现中…" : "自动发现"}
+            {modelsLoading ? t("settings.discovering") : t("settings.discover")}
           </button>
         </div>
         <select
@@ -558,7 +609,9 @@ function ProviderForm({
           className={inputCls}
         >
           <option value="">
-            {models.length ? "从自动发现结果选择…" : "（点击「自动发现」获取模型）"}
+            {models.length
+              ? t("settings.modelFromDiscovery")
+              : t("settings.modelManualHint")}
           </option>
           {models.map((m) => (
             <option key={m} value={m}>
@@ -569,18 +622,24 @@ function ProviderForm({
         <input
           value={draft.model}
           onChange={(e) => onPatch({ model: e.target.value })}
-          placeholder="或手动填写模型名"
+          placeholder={t("settings.modelManualPlaceholder")}
           className={`${inputCls} mt-2`}
         />
-        {modelsError && <div className="text-[11px] text-red-400 mt-1">{modelsError}</div>}
+        {modelsError && (
+          <div className="text-[11px] text-red-400 mt-1">{modelsError}</div>
+        )}
         {!modelsError && models.length > 0 && (
-          <div className="text-[11px] text-ink-faint mt-1">已发现 {models.length} 个模型</div>
+          <div className="text-[11px] text-ink-faint mt-1">
+            {t("settings.discoveredCount", { n: models.length })}
+          </div>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">协议</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.wireApi")}
+          </div>
           <select
             value={draft.wire_api}
             onChange={(e) =>
@@ -588,18 +647,26 @@ function ProviderForm({
             }
             className={inputCls}
           >
-            <option value="chat">chat 协议</option>
-            <option value="responses">responses 协议</option>
+            <option value="chat">{t("settings.wireApiChat")}</option>
+            <option value="responses">{t("settings.wireApiResponses")}</option>
           </select>
         </label>
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">API Key</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.apiKey")}
+          </div>
           <input
-            type={draft.apiKeyInput.startsWith("env:") || !draft.apiKeySet ? "text" : "password"}
+            type={
+              draft.apiKeyInput.startsWith("env:") || !draft.apiKeySet
+                ? "text"
+                : "password"
+            }
             value={draft.apiKeyInput}
             onChange={(e) => onPatch({ apiKeyInput: e.target.value })}
             placeholder={
-              draft.apiKeySet ? "已保存，留空保持不变" : "可填 env:VAR_NAME 引用环境变量"
+              draft.apiKeySet
+                ? t("settings.apiKeySetPlaceholder")
+                : t("settings.apiKeyPlaceholder")
             }
             className={inputCls}
           />
@@ -607,20 +674,26 @@ function ProviderForm({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">最大 Tokens（可选）</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.maxTokens")}
+          </div>
           <input
             type="number"
             min={1}
             value={draft.max_tokens ?? ""}
             onChange={(e) =>
-              onPatch({ max_tokens: e.target.value === "" ? null : Number(e.target.value) })
+              onPatch({
+                max_tokens: e.target.value === "" ? null : Number(e.target.value),
+              })
             }
-            placeholder="留空使用默认"
+            placeholder={t("settings.maxTokensPlaceholder")}
             className={inputCls}
           />
         </label>
         <label className="block">
-          <div className="text-xs text-ink-muted mb-1">温度（可选）</div>
+          <div className="text-xs text-ink-muted mb-1">
+            {t("settings.temperature")}
+          </div>
           <input
             type="number"
             step="0.1"
@@ -628,9 +701,12 @@ function ProviderForm({
             max={2}
             value={draft.temperature ?? ""}
             onChange={(e) =>
-              onPatch({ temperature: e.target.value === "" ? null : Number(e.target.value) })
+              onPatch({
+                temperature:
+                  e.target.value === "" ? null : Number(e.target.value),
+              })
             }
-            placeholder="0 ~ 2，留空使用默认"
+            placeholder={t("settings.temperaturePlaceholder")}
             className={inputCls}
           />
         </label>
@@ -646,19 +722,22 @@ function IdentityForm({
   systemPrompt: string;
   setSystemPrompt: (v: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <section className="max-w-2xl space-y-5">
-      <h2 className="text-sm font-medium">身份</h2>
+      <h2 className="text-sm font-medium">{t("settings.identityHeader")}</h2>
       <p className="text-[11px] text-ink-faint leading-relaxed">
-        追加到系统提示词的指令，用于定义 Agent 的身份、语气与行为约束。
+        {t("settings.identityHint")}
       </p>
       <label className="block">
-        <div className="text-xs text-ink-muted mb-1">系统提示词（可选）</div>
+        <div className="text-xs text-ink-muted mb-1">
+          {t("settings.systemPrompt")}
+        </div>
         <textarea
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
           rows={12}
-          placeholder="例如：你是 SenAgent，始终使用中文回答，代码注释用中文。"
+          placeholder={t("settings.systemPromptPlaceholder")}
           className={`${inputCls} resize-y`}
         />
       </label>
@@ -666,22 +745,30 @@ function IdentityForm({
   );
 }
 
-function SkillsList({ info }: { info: ReturnType<typeof useStore.getState>["info"] }) {
+function SkillsList({ info }: { info: RuntimeInfo | null }) {
+  const { t } = useI18n();
   const skills = info?.skills ?? [];
   return (
     <section className="max-w-2xl space-y-4">
-      <h2 className="text-sm font-medium">技能（{skills.length}）</h2>
+      <h2 className="text-sm font-medium">
+        {t("settings.skillsHeader", { n: skills.length })}
+      </h2>
       {skills.length === 0 ? (
-        <div className="text-xs text-ink-faint">暂无技能</div>
+        <div className="text-xs text-ink-faint">{t("settings.noSkills")}</div>
       ) : (
         <div className="space-y-3">
           {skills.map((s) => (
-            <div key={`${s.group}/${s.name}`} className="border border-line rounded-md p-3">
+            <div
+              key={`${s.group}/${s.name}`}
+              className="border border-line rounded-md p-3"
+            >
               <div className="text-xs font-medium text-ink font-mono">
                 {s.group ? `${s.group}/` : ""}
                 {s.name}
               </div>
-              <div className="text-[11px] text-ink-muted mt-1">{s.description}</div>
+              <div className="text-[11px] text-ink-muted mt-1">
+                {s.description}
+              </div>
             </div>
           ))}
         </div>
