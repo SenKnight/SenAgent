@@ -8,7 +8,6 @@ import { useStore } from "../store";
 export function TopBar() {
   const { t, lang, setLang } = useI18n();
   const { theme, toggleTheme } = useTheme();
-  const sidebarOpen = useStore((s) => s.sidebarOpen);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const info = useStore((s) => s.info);
   const wsConnected = useStore((s) => s.wsConnected);
