@@ -1,6 +1,7 @@
 /** WebSocket 客户端：自动重连 + 事件分发到 store。 */
 
 import { wsUrl } from "./api";
+import { MOCK, createMockSocket } from "./mock";
 import { useStore } from "./store";
 import type { ClientEvent } from "./types";
 
@@ -17,7 +18,7 @@ export function connectWs(): void {
     return;
   }
   intentionalClose = false;
-  const ws = new WebSocket(wsUrl());
+  const ws: WebSocket = MOCK ? createMockSocket() : new WebSocket(wsUrl());
   socket = ws;
 
   ws.onopen = () => {

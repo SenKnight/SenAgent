@@ -2,6 +2,7 @@
 **/target
 node_modules/
 frontend/dist/
+.sen-agent/
 crates/sen-desktop/gen/schemas
 # npm 平台子包二进制（由 CI 从 Release 产物提取）
 npm/*/bin/

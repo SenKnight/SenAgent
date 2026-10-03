@@ -10,6 +10,7 @@ import type {
   Session,
   StoredMessage,
 } from "./types";
+import { MOCK, mockRequest } from "./mock";
 
 /** 后端基地址：空串 = 同源（dev 走 Vite proxy，生产由后端托管）。
  *  GitHub Pages 等纯静态部署可用构建期变量 VITE_API_BASE 指向独立后端。 */
@@ -18,6 +19,7 @@ const API_BASE = (
 ).replace(/\/+$/, "");
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  if (MOCK) return mockRequest<T>(path, init);
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,

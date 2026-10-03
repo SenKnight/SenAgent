@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { getRuntimeInfo } from "./api";
+import { MOCK } from "./mock";
 import { ChatView } from "./components/ChatView";
 import { DirectoryPicker } from "./components/DirectoryPicker";
 import { RightPanel } from "./components/RightPanel";
@@ -53,6 +54,14 @@ export default function App() {
             ☰
           </button>
           <div className="font-medium text-sm">SenAgent</div>
+          {MOCK && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400"
+              title="GitHub Pages 静态预览：数据均为演示内容，未连接后端"
+            >
+              演示数据
+            </span>
+          )}
           <span className="text-xs text-ink-muted">
             {info ? `${info.provider} · ${info.model}` : serverModel ?? ""}
           </span>

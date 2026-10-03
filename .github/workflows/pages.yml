@@ -36,8 +36,11 @@ jobs:
       - name: 解析子路径
         run: echo "VITE_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
 
-      - name: 构建前端
+      - name: 构建前端（启用演示数据）
         working-directory: frontend
+        env:
+          # 静态预览无后端，用内置 mock 数据渲染完整界面
+          VITE_MOCK: "1"
         run: |
           npm ci
           npm run build
