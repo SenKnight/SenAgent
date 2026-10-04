@@ -17,24 +17,15 @@ import type {
 /** 主题模式。 */
 export type Theme = "dark" | "light";
 
-/** 主区标签页：对话（按会话）或文件（按路径）。 */
-export interface ChatTab {
-  id: string;
-  kind: "chat";
-  sessionId: string;
-  title: string;
-}
+/** 右侧文件面板标签：按文件路径唯一。 */
 export interface FileTab {
   id: string;
-  kind: "file";
   path: string;
   title: string;
 }
-export type Tab = ChatTab | FileTab;
 
 const THEME_KEY = "sen-theme";
 
-const chatTabId = (sessionId: string) => `chat:${sessionId}`;
 const fileTabId = (path: string) => `file:${path}`;
 
 function applyTheme(theme: Theme) {
@@ -58,15 +49,17 @@ interface AppState {
   plans: Plan[];
   currentPlan: Plan | null;
 
-  // 主区标签
-  tabs: Tab[];
-  activeTabId: string | null;
+  // 右侧文件面板标签
+  fileTabs: FileTab[];
+  fileActiveTabId: string | null;
 
   // UI 状态
   running: boolean;
   wsConnected: boolean;
   serverModel: string | null;
   sidebarOpen: boolean;
+  /** 右侧文件面板是否展开 */
+  rightPanelOpen: boolean;
   /** 设置面板是否打开（覆盖主区） */
   settingsOpen: boolean;
   dirPickerOpen: boolean;
@@ -85,11 +78,12 @@ interface AppState {
   openSettings: () => void;
   closeSettings: () => void;
 
-  // 标签动作
-  openChatTab: (sessionId: string, title?: string) => void;
+  // 右侧文件面板动作
   openFileTab: (path: string) => void;
-  closeTab: (id: string) => void;
-  activateTab: (id: string) => void;
+  closeFileTab: (id: string) => void;
+  activateFileTab: (id: string) => void;
+  toggleRightPanel: () => void;
+  setRightPanelOpen: (open: boolean) => void;
 
   // 会话动作
   refreshSessions: () => Promise<void>;
@@ -117,12 +111,13 @@ export const useStore = create<AppState>((set, get) => ({
   info: null,
   plans: [],
   currentPlan: null,
-  tabs: [],
-  activeTabId: null,
+  fileTabs: [],
+  fileActiveTabId: null,
   running: false,
   wsConnected: false,
   serverModel: null,
   sidebarOpen: true,
+  rightPanelOpen: false,
   settingsOpen: false,
   dirPickerOpen: false,
   theme: initialTheme(),
@@ -154,62 +149,37 @@ export const useStore = create<AppState>((set, get) => ({
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
 
-  openChatTab: (sessionId, title) => {
-    const id = chatTabId(sessionId);
-    if (!get().tabs.some((t) => t.id === id)) {
-      set((st) => ({
-        tabs: [...st.tabs, { id, kind: "chat", sessionId, title: title ?? "" }],
-      }));
-    }
-    set({ activeTabId: id, settingsOpen: false });
-  },
-
   openFileTab: (path) => {
     const id = fileTabId(path);
-    if (!get().tabs.some((t) => t.id === id)) {
+    if (!get().fileTabs.some((t) => t.id === id)) {
       const title = path.split("/").filter(Boolean).pop() ?? path;
-      set((st) => ({ tabs: [...st.tabs, { id, kind: "file", path, title }] }));
+      set((st) => ({ fileTabs: [...st.fileTabs, { id, path, title }] }));
     }
-    set({ activeTabId: id, settingsOpen: false });
+    set({ fileActiveTabId: id, rightPanelOpen: true, settingsOpen: false });
   },
 
-  closeTab: (id) => {
-    const { tabs, activeTabId } = get();
-    const idx = tabs.findIndex((t) => t.id === id);
+  closeFileTab: (id) => {
+    const { fileTabs, fileActiveTabId } = get();
+    const idx = fileTabs.findIndex((t) => t.id === id);
     if (idx < 0) return;
-    const next = tabs.filter((t) => t.id !== id);
-    let nextActive = activeTabId;
-    if (activeTabId === id) {
+    const next = fileTabs.filter((t) => t.id !== id);
+    let nextActive = fileActiveTabId;
+    if (fileActiveTabId === id) {
       const neighbor = next[idx] ?? next[idx - 1] ?? null;
       nextActive = neighbor ? neighbor.id : null;
     }
-    set({ tabs: next, activeTabId: nextActive });
+    // 关闭最后一个文件时自动收起右侧面板
+    set({ fileTabs: next, fileActiveTabId: nextActive, rightPanelOpen: next.length > 0 });
   },
 
-  activateTab: (id) => {
-    const tab = get().tabs.find((t) => t.id === id);
-    if (!tab) return;
-    set({ activeTabId: id, settingsOpen: false });
-    // 切换到不同会话的对话标签时加载其消息（生成中不打断）
-    if (tab.kind === "chat" && tab.sessionId !== get().currentSessionId) {
-      if (!get().running) void get().openSession(tab.sessionId);
-    }
-  },
+  activateFileTab: (id) => set({ fileActiveTabId: id, settingsOpen: false }),
+
+  toggleRightPanel: () => set((st) => ({ rightPanelOpen: !st.rightPanelOpen })),
+  setRightPanelOpen: (rightPanelOpen) => set({ rightPanelOpen }),
 
   refreshSessions: async () => {
     const sessions = await api.listSessions();
-    set((st) => ({
-      sessions,
-      // 首轮对话后标题可能生成，同步到对应对话标签
-      tabs: st.tabs.map((t) =>
-        t.kind === "chat"
-          ? {
-              ...t,
-              title: sessions.find((s) => s.id === t.sessionId)?.title || t.title,
-            }
-          : t,
-      ),
-    }));
+    set({ sessions });
   },
 
   newSession: async () => {
@@ -222,7 +192,6 @@ export const useStore = create<AppState>((set, get) => ({
       currentPlan: null,
       planMode: false,
     });
-    get().openChatTab(session.id, session.title);
     return session;
   },
 
@@ -243,15 +212,12 @@ export const useStore = create<AppState>((set, get) => ({
       messages: toUiMessages(messages),
       currentPlan: null,
     });
-    get().openChatTab(session.id, session.title);
     get().refreshSessions().catch(() => {});
     get().refreshPlans().catch(() => {});
   },
 
   removeSession: async (id) => {
     await api.deleteSession(id);
-    // 关闭该会话对应的对话标签
-    get().closeTab(chatTabId(id));
     if (get().currentSessionId === id) {
       set({ currentSessionId: null, messages: [], plans: [], currentPlan: null });
     }

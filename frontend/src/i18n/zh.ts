@@ -5,6 +5,7 @@ export const zh = {
   "app.demo": "演示数据",
 
   "top.toggleSidebar": "折叠 / 展开侧栏",
+  "top.toggleFilePanel": "文件面板",
   "top.project": "项目目录",
   "top.chooseDir": "选择项目目录：{path}",
   "top.noDir": "未设置",
@@ -29,6 +30,12 @@ export const zh = {
   "sidebar.deleteConfirm": "删除会话「{title}」？该操作不可恢复。",
   "sidebar.untitled": "未命名会话",
   "sidebar.messageCount": "{n} 条",
+  "sidebar.new": "新建",
+  "sidebar.selectProject": "选择项目",
+  "sidebar.filterProjects": "筛选项目…",
+  "sidebar.noMatchingProjects": "无匹配项目",
+  "sidebar.useDefaultDirectory": "使用默认目录",
+  "sidebar.customPath": "自定义路径…",
 
   "tab.close": "关闭",
   "tab.untitled": "新会话",
@@ -51,6 +58,8 @@ export const zh = {
   "chat.reasoningShow": "查看推理过程",
   "chat.reasoningHide": "收起推理过程",
   "chat.usage": "用量: 输入 {input} tokens / 输出 {output} tokens",
+  "chat.tokensIn": "累计输入 tokens",
+  "chat.tokensOut": "累计输出 tokens",
   "chat.wsDisconnected": "WebSocket 未连接，请稍候重试",
   "chat.stopped": "已停止本轮生成",
 
@@ -71,6 +80,9 @@ export const zh = {
   "file.preview": "预览",
   "file.openHint": "从左侧文件树选择文件查看内容",
   "file.notFound": "读取文件失败",
+  "files.noneOpen": "未打开文件",
+  "files.hidePanel": "收起文件面板",
+  "files.resizeHint": "拖动调整宽度",
 
   "dir.title": "选择项目目录",
   "dir.parent": "↑ 上一级",

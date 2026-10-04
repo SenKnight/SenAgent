@@ -7,6 +7,7 @@ export const en: Dict = {
   "app.demo": "Demo data",
 
   "top.toggleSidebar": "Collapse / Expand sidebar",
+  "top.toggleFilePanel": "File panel",
   "top.project": "Project directory",
   "top.chooseDir": "Choose project directory: {path}",
   "top.noDir": "Not set",
@@ -31,6 +32,12 @@ export const en: Dict = {
   "sidebar.deleteConfirm": "Delete session \"{title}\"? This cannot be undone.",
   "sidebar.untitled": "Untitled session",
   "sidebar.messageCount": "{n}",
+  "sidebar.new": "New",
+  "sidebar.selectProject": "Select project",
+  "sidebar.filterProjects": "Filter projects…",
+  "sidebar.noMatchingProjects": "No matching projects",
+  "sidebar.useDefaultDirectory": "Use default directory",
+  "sidebar.customPath": "Custom path…",
 
   "tab.close": "Close",
   "tab.untitled": "New session",
@@ -55,6 +62,8 @@ export const en: Dict = {
   "chat.reasoningShow": "Show reasoning",
   "chat.reasoningHide": "Hide reasoning",
   "chat.usage": "Usage: {input} input tokens / {output} output tokens",
+    "chat.tokensIn": "Total input tokens",
+    "chat.tokensOut": "Total output tokens",
   "chat.wsDisconnected": "WebSocket not connected, please retry shortly",
   "chat.stopped": "Generation stopped",
 
@@ -76,6 +85,9 @@ export const en: Dict = {
   "file.preview": "Preview",
   "file.openHint": "Pick a file from the file tree on the left",
   "file.notFound": "Failed to read file",
+  "files.noneOpen": "No file open",
+  "files.hidePanel": "Hide file panel",
+  "files.resizeHint": "Drag to resize",
 
   "dir.title": "Choose project directory",
   "dir.parent": "↑ Parent",

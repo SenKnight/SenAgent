@@ -6,6 +6,7 @@ import { useI18n } from "../hooks/useI18n";
 import { useStore } from "../store";
 import type { Plan } from "../types";
 import { ChatInput, SET_INPUT_EVENT } from "./ChatInput";
+import { ChatStatus } from "./ChatStatus";
 import { MarkdownBody } from "./MarkdownBody";
 import { MessageView } from "./MessageView";
 
@@ -56,6 +57,11 @@ export function ChatWindow({ sessionId }: { sessionId: string }) {
         )}
       </div>
       <ChatInput sessionId={sessionId} />
+      <footer className="shrink-0 border-t border-line px-4 md:px-8 py-1.5">
+        <div className="max-w-3xl mx-auto">
+          <ChatStatus />
+        </div>
+      </footer>
     </div>
   );
 }

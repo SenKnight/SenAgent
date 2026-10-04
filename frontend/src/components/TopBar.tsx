@@ -1,74 +1,60 @@
-/** 顶栏：品牌、项目目录入口、模型徽标、连接状态、语言 / 主题切换、侧栏折叠、设置。 */
+/** 顶栏：侧栏折叠、会话状态（模型 / token 用量）、连接状态、语言 / 主题切换、设置、文件面板开关。 */
 
 import { useI18n } from "../hooks/useI18n";
 import { useTheme } from "../hooks/useTheme";
 import { MOCK } from "../mock";
 import { useStore } from "../store";
+import { ChatStatus } from "./ChatStatus";
+
+const ICON_BUTTON =
+  "flex h-9 w-9 items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-elevated";
 
 export function TopBar() {
   const { t, lang, setLang } = useI18n();
   const { theme, toggleTheme } = useTheme();
   const toggleSidebar = useStore((s) => s.toggleSidebar);
-  const info = useStore((s) => s.info);
   const wsConnected = useStore((s) => s.wsConnected);
-  const serverModel = useStore((s) => s.serverModel);
-  const setDirPickerOpen = useStore((s) => s.setDirPickerOpen);
+  const settingsOpen = useStore((s) => s.settingsOpen);
   const openSettings = useStore((s) => s.openSettings);
-
-  const dirName = info?.cwd
-    ? (info.cwd.split("/").filter(Boolean).pop() ?? info.cwd)
-    : null;
-  const modelLabel = info ? `${info.provider} · ${info.model}` : serverModel ?? "";
+  const rightPanelOpen = useStore((s) => s.rightPanelOpen);
+  const toggleRightPanel = useStore((s) => s.toggleRightPanel);
+  const hasFileTabs = useStore((s) => s.fileTabs.length > 0);
 
   return (
-    <header className="h-12 shrink-0 border-b border-line flex items-center gap-2 px-3">
+    <header className="h-12 shrink-0 border-b border-line flex items-center gap-1.5 px-3">
       <button
         type="button"
         onClick={toggleSidebar}
         title={t("top.toggleSidebar")}
-        className="text-ink-muted hover:text-ink text-sm px-1"
+        className={ICON_BUTTON}
       >
-        ☰
+        <MenuIcon />
       </button>
-      <div className="font-medium text-sm">{t("app.title")}</div>
+
       {MOCK && (
         <span
-          className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400"
+          className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0"
           title={t("app.demo")}
         >
           {t("app.demo")}
         </span>
       )}
-      <span className="text-xs text-ink-muted truncate hidden sm:inline">
-        {modelLabel}
-      </span>
-      <span className="flex-1" />
+      <div className="min-w-0 flex-1 px-1">
+        <ChatStatus />
+      </div>
 
       <span
-        className={`w-2 h-2 rounded-full shrink-0 ${
+        className={`w-2 h-2 rounded-full shrink-0 mr-1 ${
           wsConnected ? "bg-emerald-400" : "bg-red-400"
         }`}
-        title={
-          wsConnected
-            ? t("top.connected")
-            : t("top.reconnecting")
-        }
+        title={wsConnected ? t("top.connected") : t("top.reconnecting")}
       />
-
-      <button
-        type="button"
-        onClick={() => setDirPickerOpen(true)}
-        title={t("top.chooseDir", { path: info?.cwd ?? t("top.noDir") })}
-        className="text-ink-muted hover:text-ink text-xs max-w-[180px] truncate"
-      >
-        {t("top.project")}: {dirName ?? t("top.noDir")}
-      </button>
 
       <button
         type="button"
         onClick={() => setLang(lang === "zh" ? "en" : "zh")}
         title={t("top.lang")}
-        className="px-1.5 py-0.5 rounded border border-line text-xs text-ink-muted hover:text-ink hover:bg-elevated"
+        className="h-9 px-2 rounded-md border border-line text-xs text-ink-muted hover:text-ink hover:bg-elevated"
       >
         {lang === "zh" ? "中" : "EN"}
       </button>
@@ -77,7 +63,7 @@ export function TopBar() {
         type="button"
         onClick={toggleTheme}
         title={theme === "dark" ? t("top.themeToLight") : t("top.themeToDark")}
-        className="p-1 rounded hover:bg-elevated text-ink-muted hover:text-ink"
+        className={ICON_BUTTON}
       >
         <ThemeIcon dark={theme === "dark"} />
       </button>
@@ -86,11 +72,43 @@ export function TopBar() {
         type="button"
         onClick={openSettings}
         title={t("top.settings")}
-        className="p-1 rounded hover:bg-elevated text-ink-muted hover:text-ink"
+        aria-pressed={settingsOpen}
+        className={`${ICON_BUTTON} ${settingsOpen ? "text-ink bg-elevated" : ""}`}
       >
         <GearIcon />
       </button>
+
+      <button
+        type="button"
+        onClick={toggleRightPanel}
+        title={t("top.toggleFilePanel")}
+        aria-pressed={rightPanelOpen}
+        className={`${ICON_BUTTON} ${
+          rightPanelOpen ? "text-ink bg-elevated" : ""
+        }`}
+      >
+        <FilePanelIcon filled={hasFileTabs} />
+      </button>
     </header>
+  );
+}
+
+/** 侧栏折叠图标。 */
+function MenuIcon() {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
   );
 }
 
@@ -98,12 +116,12 @@ export function TopBar() {
 function ThemeIcon({ dark }: { dark: boolean }) {
   return (
     <svg
-      width="16"
-      height="16"
+      width="19"
+      height="19"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.9"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -123,17 +141,47 @@ function ThemeIcon({ dark }: { dark: boolean }) {
 function GearIcon() {
   return (
     <svg
-      width="16"
-      height="16"
+      width="19"
+      height="19"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.9"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <circle cx="12" cy="12" r="3" />
+      <circle cx="12" cy="12" r="3.2" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+/** 文件面板图标（面板形状，有标签时半透明填充）。 */
+function FilePanelIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <line x1="15" y1="3" x2="15" y2="21" />
+      {filled && (
+        <rect
+          x="15"
+          y="3"
+          width="6"
+          height="18"
+          fill="currentColor"
+          opacity="0.35"
+          stroke="none"
+        />
+      )}
     </svg>
   );
 }

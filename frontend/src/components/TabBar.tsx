@@ -1,43 +1,44 @@
-/** 主区标签栏：对话 / 文件标签的激活与关闭。 */
+/** 右侧文件面板的标签栏：文件标签的激活与关闭。 */
 
 import { useI18n } from "../hooks/useI18n";
 import { useStore } from "../store";
 
 export function TabBar() {
   const { t } = useI18n();
-  const tabs = useStore((s) => s.tabs);
-  const activeTabId = useStore((s) => s.activeTabId);
-  const activateTab = useStore((s) => s.activateTab);
-  const closeTab = useStore((s) => s.closeTab);
+  const fileTabs = useStore((s) => s.fileTabs);
+  const fileActiveTabId = useStore((s) => s.fileActiveTabId);
+  const activateFileTab = useStore((s) => s.activateFileTab);
+  const closeFileTab = useStore((s) => s.closeFileTab);
 
-  if (tabs.length === 0) {
-    return <div className="h-10 shrink-0 border-b border-line" />;
+  if (fileTabs.length === 0) {
+    return (
+      <div className="h-10 flex items-center px-3 text-xs text-ink-faint">
+        {t("files.noneOpen")}
+      </div>
+    );
   }
 
   return (
-    <div className="h-10 shrink-0 border-b border-line flex items-stretch overflow-x-auto">
-      {tabs.map((tab) => {
-        const active = tab.id === activeTabId;
-        const title =
-          tab.kind === "chat" ? tab.title || t("tab.untitled") : tab.title;
+    <div className="h-10 flex items-stretch overflow-x-auto">
+      {fileTabs.map((tab) => {
+        const active = tab.id === fileActiveTabId;
         return (
           <div
             key={tab.id}
-            onClick={() => activateTab(tab.id)}
+            onClick={() => activateFileTab(tab.id)}
+            title={tab.path}
             className={`group flex items-center gap-2 pl-3 pr-1.5 border-r border-line cursor-pointer max-w-[220px] ${
               active ? "bg-elevated text-ink" : "text-ink-muted hover:bg-hover"
             }`}
           >
-            <span className="text-[10px] text-ink-faint shrink-0">
-              {tab.kind === "chat" ? "●" : "▤"}
-            </span>
-            <span className="text-xs truncate">{title}</span>
+            <span className="text-[10px] text-ink-faint shrink-0">▤</span>
+            <span className="text-xs truncate">{tab.title}</span>
             <button
               type="button"
               title={t("tab.close")}
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(tab.id);
+                closeFileTab(tab.id);
               }}
               className="text-ink-faint hover:text-ink text-sm leading-none px-1 shrink-0 rounded group-hover:bg-hover"
             >
